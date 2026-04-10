@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/>
+<meta name="apple-mobile-web-app-title" content="REX BOT"/>
+<meta name="theme-color" content="#050505"/>
+<title>◈ REX BOT</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+html,body{background:#050505!important;color:#fff;margin:0;padding:0;min-height:100vh;-webkit-text-size-adjust:100%;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;font-family:'JetBrains Mono',monospace;}
+body{max-width:480px;margin:0 auto;padding-bottom:100px;overscroll-behavior:none;}
+button{cursor:pointer;border:none;outline:none;background:none;}
+input{outline:none;}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:#1a1a1a}
+
+#toast{position:fixed;top:58px;left:50%;transform:translateX(-50%) translateY(-20px);
+background:#111;border-radius:10px;padding:10px 18px;font-size:11px;font-weight:800;
+z-index:9999;pointer-events:none;opacity:0;transition:all 0.3s;max-width:88vw;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid #333;}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+.hdr{padding:18px 16px 12px;border-bottom:1px solid #111;position:sticky;top:0;background:#050505;z-index:100;}
+.tabs{display:flex;background:#050505;border-bottom:1px solid #111;position:sticky;top:0;z-index:99;}
+.tbtn{flex:1;padding:10px 0;font-size:8px;font-weight:800;letter-spacing:.8px;color:#2a2a2a;border-bottom:2px solid transparent;transition:all .15s;}
+.tbtn.on{color:#22c55e;border-bottom-color:#22c55e;}
+.pane{display:none;padding:14px;}
+.pane.on{display:block;}
+
+.card{background:#0c0c0c;border:1px solid #1a1a1a;border-radius:14px;padding:14px;margin-bottom:10px;}
+.inset{background:#080808;border:1px solid #111;border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+.chip{display:inline-block;padding:2px 8px;border-radius:99px;font-size:9px;font-weight:800;white-space:nowrap;}
+.stat4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px;}
+.scard{background:#0c0c0c;border:1px solid #1a1a1a;border-radius:9px;padding:8px 0;text-align:center;}
+.bar{height:3px;background:#111;border-radius:99px;overflow:hidden;margin:4px 0;}
+.barf{height:100%;border-radius:99px;transition:width 1s ease;}
+.sgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:10px;}
+.sbtn{padding:8px 0;border-radius:8px;font-size:9px;font-weight:800;}
+.inp{width:100%;padding:11px 13px;border-radius:9px;background:#0c0c0c;border:1px solid #1e1e1e;color:#fff;font-size:13px;}
+.inp::placeholder{color:#333;}
+.row{display:flex;justify-content:space-between;align-items:center;}
+.setup{padding:24px 16px 40px;}
+.phan-btn{width:100%;padding:15px;border-radius:13px;background:linear-gradient(135deg,#534bb1,#551bf9);
+color:#fff;font-size:14px;font-weight:800;margin-bottom:14px;
+display:flex;align-items:center;justify-content:center;gap:10px;border:none;cursor:pointer;}
+.warn{background:#f59e0b0d;border:1px solid #f59e0b22;border-radius:10px;padding:10px 12px;margin-bottom:16px;font-size:9px;color:#f59e0b88;line-height:1.6;}
+.lbl{font-size:9px;color:#444;font-weight:800;letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;display:block;}
+.grp{margin-bottom:16px;}
+.launch-btn{width:100%;padding:15px;border-radius:13px;background:#22c55e1a;color:#22c55e;border:1px solid #22c55e44;font-size:15px;font-weight:800;}
+.mode-row{display:flex;gap:8px;margin-bottom:8px;}
+.mode-btn{flex:1;padding:11px;border-radius:9px;font-size:10px;font-weight:800;}
+.road{position:relative;height:42px;margin:12px 0 20px;}
+.road-line{position:absolute;top:12px;left:18px;right:18px;height:2px;background:#111;border-radius:99px;}
+.road-prog{height:100%;border-radius:99px;transition:width 1.2s ease;}
+.rdot{position:absolute;top:2px;display:flex;flex-direction:column;align-items:center;gap:3px;}
+.rcirc{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;transition:all .5s;}
+.cca{display:flex;align-items:center;gap:6px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:8px;padding:8px 11px;width:100%;margin-top:7px;transition:all .2s;cursor:pointer;}
+.cca.ok{background:#22c55e0d;border-color:#22c55e33;}
+.cr{display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #0d0d0d;align-items:center;}
+
+/* SCAN LOG ENTRY */
+.log-entry{border-bottom:1px solid #0a0a0a;}
+.log-row{display:flex;gap:8px;align-items:center;padding:7px 14px;}
+.log-checks{padding:0 14px 8px;display:flex;flex-direction:column;gap:2px;}
+.log-check{display:flex;gap:6px;align-items:center;}
+
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.blink{animation:blink 1.5s infinite;}
+.fu{animation:fadeUp .3s ease;}
+.spin{animation:spin 1s linear infinite;display:inline-block;}
+</style>
+
+</head>
+<body>
+<div id="toast"></div>
+<div id="app"></div>
+<script>
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+const S={
+  screen:"setup",
+  heliusKey:"",walletPubkey:"",
+  paperMode:true,botRunning:false,botMode:"NORMAL",
+  balance:10,         // paper balance OR live SOL balance in USD
+  portfolioVal:10,
+  totalPnlUsd:0,
+  solPrice:150,
+  activeTrades:[],closedTrades:[],
+  scanLog:[],         // full log — every CA scanned
+  losses:0,wins:0,
+  blacklist:new Set(),
+  scanning:false,
+  tab:"trade",
+  scanTimer:null,priceTimer:null,balTimer:null,
+};
+
+// ── EXIT STRATEGY ──
+// Phase 1 → 2x → sell 80%  (holds 20%)
+// Phase 2 → 5x → sell 50% of 20% = holds 10%
+// Phase 3 → 10x → sell 50% of 10% = holds 5% moonbag
+const EXITS=[
+{phase:1, target:2.0,  sellPct:0.80, label:“2x”,  nextHold:0.20},
+{phase:2, target:5.0,  sellPct:0.50, label:“5x”,  nextHold:0.10},
+{phase:3, target:10.0, sellPct:0.50, label:“10x”, nextHold:0.05},
+];
+const MOONBAG_PCT = 0.05;   // what’s left after all 3 exits
+const TRADE_SIZE  = 5;
+const SL_PCT      = 0.40;   // stop loss -40% (phase 1 only)
+const SCAN_MS     = 18000;
+const TICK_MS     = 12000;
+const BAL_MS      = 30000;  // refresh wallet balance every 30s in live mode
+const SOL_MINT    = “So11111111111111111111111111111111111111112”;
+
+// ── utils ──
+const $ =id=>document.getElementById(id);
+const fU=n=>`$${Math.abs(n).toFixed(2)}`;
+const fP=n=>`${n>=0?"+":""}${n.toFixed(1)}%`;
+const pC=n=>n>0?”#22c55e”:n<0?”#f87171”:”#888”;
+const sh=a=>a?`${a.slice(0,5)}…${a.slice(-4)}`:””;
+const ag=ts=>{const s=Math.floor((Date.now()-ts)/1000);return s<60?`${s}s`:`${Math.floor(s/60)}m`;};
+const mc={NORMAL:”#22c55e”,STRICT:”#f87171”,RECOVERY:”#f59e0b”};
+
+function toast(msg,col=”#22c55e”){
+const el=$(“toast”);
+el.textContent=msg;el.style.color=col;
+el.style.borderColor=col+“55”;
+el.classList.add(“show”);
+setTimeout(()=>el.classList.remove(“show”),3600);
+}
+function persist(){
+try{localStorage.setItem(“rx_hk”,S.heliusKey);
+localStorage.setItem(“rx_pk”,S.walletPubkey);
+localStorage.setItem(“rx_pm”,S.paperMode?“1”:“0”);}catch(e){}
+}
+function hydrate(){
+try{S.heliusKey=localStorage.getItem(“rx_hk”)||””;
+S.walletPubkey=localStorage.getItem(“rx_pk”)||””;
+S.paperMode=localStorage.getItem(“rx_pm”)!==“0”;}catch(e){}
+}
+
+// ═══════════════════════════════════════
+//  API
+// ═══════════════════════════════════════
+async function getSolPrice(){
+try{const r=await fetch(“https://price.jup.ag/v4/price?ids=SOL”);
+const d=await r.json();S.solPrice=d.data?.SOL?.price||150;return S.solPrice;}
+catch{return S.solPrice;}
+}
+
+// ── LIVE WALLET BALANCE via Helius ──
+async function fetchWalletBalance(){
+if(!S.heliusKey||!S.walletPubkey) return;
+try{
+const rpc=`https://mainnet.helius-rpc.com/?api-key=${S.heliusKey}`;
+const r=await fetch(rpc,{method:“POST”,headers:{“Content-Type”:“application/json”},
+body:JSON.stringify({jsonrpc:“2.0”,id:1,method:“getBalance”,
+params:[S.walletPubkey]})});
+const d=await r.json();
+if(d.result?.value!==undefined){
+const sol=d.result.value/1e9;
+const sp=await getSolPrice();
+S.balance=parseFloat((sol*sp).toFixed(2));
+S.portfolioVal=S.balance;
+render();
+}
+}catch(e){console.error(“Balance fetch:”,e);}
+}
+
+async function dexData(mint){
+try{
+const r=await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+const d=await r.json();
+if(!d.pairs?.length)return null;
+const pairs=d.pairs.filter(p=>p.chainId===“solana”)
+.sort((a,b)=>(b.liquidity?.usd||0)-(a.liquidity?.usd||0));
+if(!pairs.length)return null;
+const p=pairs[0];
+return{liq:p.liquidity?.usd||0,vol24:p.volume?.h24||0,vol1:p.volume?.h1||0,
+price:parseFloat(p.priceUsd)||0,buys:p.txns?.h24?.buys||0,sells:p.txns?.h24?.sells||0,
+ch1:p.priceChange?.h1||0,ch24:p.priceChange?.h24||0,
+age:p.pairCreatedAt?(Date.now()-p.pairCreatedAt)/60000:null,
+name:p.baseToken?.name||“Unknown”,sym:p.baseToken?.symbol||”???”,};
+}catch(e){return null;}
+}
+
+async function heliusData(mint){
+if(!S.heliusKey)return null;
+const rpc=`https://mainnet.helius-rpc.com/?api-key=${S.heliusKey}`;
+try{
+const[mR,hR]=await Promise.all([
+fetch(rpc,{method:“POST”,headers:{“Content-Type”:“application/json”},
+body:JSON.stringify({jsonrpc:“2.0”,id:1,method:“getAccountInfo”,params:[mint,{encoding:“jsonParsed”}]})}),
+fetch(rpc,{method:“POST”,headers:{“Content-Type”:“application/json”},
+body:JSON.stringify({jsonrpc:“2.0”,id:2,method:“getTokenLargestAccounts”,params:[mint]})}),
+]);
+const mD=await mR.json();const hD=await hR.json();
+const info=mD.result?.value?.data?.parsed?.info;
+let top10=0;
+if(hD.result?.value){
+const accs=hD.result.value;
+const tot=accs.reduce((s,a)=>s+parseFloat(a.uiAmount||0),0);
+const t10=accs.slice(0,10).reduce((s,a)=>s+parseFloat(a.uiAmount||0),0);
+top10=tot>0?(t10/tot)*100:0;
+}
+return{mintAuth:!!info?.mintAuthority,freezeAuth:!!info?.freezeAuthority,top10};
+}catch(e){return null;}
+}
+
+async function jupQuote(inM,outM,amt){
+try{const r=await fetch(`https://quote-api.jup.ag/v6/quote?inputMint=${inM}&outputMint=${outM}&amount=${amt}&slippageBps=100`);
+return r.json();}catch(e){return null;}
+}
+
+async function trending(){
+try{
+const r=await fetch(“https://api.dexscreener.com/latest/dex/search?q=sol”);
+const d=await r.json();
+if(!d.pairs)return[];
+return d.pairs
+.filter(p=>p.chainId===“solana”&&(p.liquidity?.usd||0)>5000
+&&p.pairCreatedAt&&(Date.now()-p.pairCreatedAt)<6*3600000)
+.sort((a,b)=>(b.volume?.h1||0)-(a.volume?.h1||0))
+.slice(0,10).map(p=>p.baseToken?.address).filter(Boolean);
+}catch(e){return[];}
+}
+
+// ═══════════════════════════════════════
+//  STRATEGY ENGINE
+// ═══════════════════════════════════════
+function runStrategy(token){
+const mode=S.botMode;
+const checks=[];let pass=true,reason=null;
+const fail=(l,r)=>{checks.push({l,s:“REJECT”,r});if(pass){pass=false;reason=`${l}: ${r}`;}};
+const ok  =(l,r)=>checks.push({l,s:“PASS”,r});
+const skip=(l,r)=>checks.push({l,s:“SKIP”,r});
+
+// LAYER 1
+const lf=mode===“STRICT”?10000:5000;
+token.liq<lf?fail(“Liquidity”,`$${token.liq?.toFixed(0)}<$${lf}`):ok(“Liquidity”,`$${token.liq?.toFixed(0)}`);
+if(token.mintAuth)fail(“Mint Auth”,“Active”);
+else if(token.freezeAuth)fail(“Freeze”,“Active”);
+else ok(“Perms”,“Clean”);
+if(S.blacklist.has(token.mint))fail(“Blacklist”,“Flagged”);
+else ok(“Blacklist”,“Clear”);
+if(!pass)return{pass,reason,checks,sig:null};
+
+// LAYER 2
+const cl=mode===“STRICT”?15:40;
+const t10=token.top10||0;
+t10>cl?fail(“Concentration”,`${t10.toFixed(0)}%>${cl}%`):ok(“Concentration”,`${t10.toFixed(0)}%`);
+const txns=(token.buys||0)+(token.sells||0);
+const bs=txns>0&&(token.buys/txns)>0.88?70:35;
+bs>55?fail(“Bot Score”,`${bs}`):ok(“Bot Score”,`${bs}`);
+const vlr=token.liq>0?token.vol24/token.liq:0;
+vlr>20?fail(“Vol/Liq”,`${vlr.toFixed(1)}x`):ok(“Vol/Liq”,`${vlr.toFixed(1)}x`);
+if(token.age>=120){
+const fr=0.0025;
+fr<0.008?fail(“Fee”,“Farmed”):ok(“Fee”,`${(fr*100).toFixed(2)}%`);
+}else skip(“Fee”,`${token.age?.toFixed(0)}min`);
+if(!pass)return{pass,reason,checks,sig:null};
+
+// LAYER 3
+const mom=Math.min((token.ch1+50),100);
+const vs=Math.min(token.vol24/10000*40,100);
+const ns=mom*0.5+vs*0.5;
+const sig=ns>=65?“STRONG”:ns>=40?“WEAK”:“NO_SIGNAL”;
+ok(“Narrative”,`${ns.toFixed(0)}→${sig}`);
+if(sig===“NO_SIGNAL”)return{pass:false,reason:`Narrative ${ns.toFixed(0)}<40`,checks,sig};
+return{pass:true,reason:null,checks,sig};
+}
+
+// ═══════════════════════════════════════
+//  SCAN LOOP
+// ═══════════════════════════════════════
+async function scanCycle(){
+if(!S.botRunning)return;
+const p1=S.activeTrades.filter(t=>t.phase===1).length;
+if(p1>0||S.activeTrades.length>=2)return;
+if(S.balance<TRADE_SIZE){toast(“⚠ Insufficient balance”,”#f59e0b”);return;}
+S.scanning=true;render();
+
+try{
+const mints=await trending();
+for(const mint of mints){
+if(S.activeTrades.find(t=>t.mint===mint)||S.blacklist.has(mint))continue;
+
+```
+  // ── Fetch data ──
+  const[dx,hx]=await Promise.all([dexData(mint),heliusData(mint)]);
+  if(!dx)continue;
+
+  const token={mint,name:dx.name,sym:dx.sym,price:dx.price,liq:dx.liq,
+    vol24:dx.vol24,age:dx.age,top10:hx?.top10||0,
+    mintAuth:hx?.mintAuth||false,freezeAuth:hx?.freezeAuth||false,
+    buys:dx.buys,sells:dx.sells,ch1:dx.ch1};
+
+  const res=runStrategy(token);
+
+  // ── ADD TO LOG — every scanned CA with checks ──
+  S.scanLog.unshift({
+    id:Date.now()+Math.random(),
+    time:Date.now(),
+    mint,sym:token.sym,name:token.name,
+    result:res.pass?"BUY":"SKIP",
+    reason:res.pass?`${res.sig} signal`:res.reason?.slice(0,42),
+    checks:res.checks,
+    liq:token.liq,vol24:token.vol24,price:token.price,
+    expanded:false,
+  });
+  if(S.scanLog.length>100)S.scanLog.pop();
+  render(); // show in log immediately
+
+  if(res.pass){
+    const sp=await getSolPrice();
+    const lamps=Math.floor((TRADE_SIZE/sp)*1e9);
+    const q=await jupQuote(SOL_MINT,mint,lamps);
+    if(!q||q.error){
+      // Update log entry — no route
+      const le=S.scanLog.find(l=>l.mint===mint&&l.result==="BUY");
+      if(le){le.result="SKIP";le.reason="No Jupiter route";}
+      render();continue;
+    }
+    S.balance-=TRADE_SIZE;
+    const tr={
+      id:Date.now(),mint,name:token.name,sym:token.sym,
+      sig:res.sig,checks:res.checks,
+      entryPrice:token.price,curPrice:token.price,
+      entryLiq:token.liq,tokensOut:parseInt(q.outAmount||0),
+      invested:TRADE_SIZE,pnl:0,mult:1,
+      // Multi-phase tracking
+      phase:1,           // current phase (1/2/3/moon)
+      holdPct:1.0,       // % of original position still held
+      returns:[],        // [{label,usd}] — logged sells
+      entryTime:Date.now(),paper:S.paperMode,
+      peakVol:dx.vol1||0,
+    };
+    S.activeTrades.push(tr);
+    toast(`◈ BOUGHT ${token.sym} · ${res.sig} · $${TRADE_SIZE}`,"#22c55e");
+    if(!S.paperMode)window.open(`https://jup.ag/swap/SOL-${mint}`,"_blank");
+    break;
+  }
+}
+```
+
+}catch(e){console.error(“Scan:”,e);}
+S.scanning=false;render();
+}
+
+// ═══════════════════════════════════════
+//  PRICE TICK + EXIT LOGIC
+// ═══════════════════════════════════════
+async function priceTick(){
+if(!S.botRunning||!S.activeTrades.length)return;
+
+for(const tr of[…S.activeTrades]){
+try{
+const dx=await dexData(tr.mint);
+if(!dx||!dx.price)continue;
+tr.curPrice=dx.price;
+tr.pnl=((dx.price-tr.entryPrice)/tr.entryPrice)*100;
+tr.mult=1+tr.pnl/100;
+if(dx.vol1>tr.peakVol)tr.peakVol=dx.vol1;
+
+```
+  // ── STOP LOSS (phase 1 only) ──
+  if(tr.phase===1&&tr.pnl<=-(SL_PCT*100)){
+    const ret=tr.invested*(1-SL_PCT);
+    S.balance+=ret;S.totalPnlUsd-=tr.invested*SL_PCT;
+    closeT(tr,"Stop-loss -40%",ret);
+    toast(`💀 ${tr.sym} -40% · recovered ${fU(ret)}`,"#f87171");
+    addLoss();
+    if(!S.paperMode)window.open(`https://jup.ag/swap/${tr.mint}-SOL`,"_blank");
+    continue;
+  }
+
+  // ── PHASE EXITS: 2x → 5x → 10x ──
+  for(const exit of EXITS){
+    if(tr.phase===exit.phase&&tr.mult>=exit.target){
+      // Sell sellPct of currently held tokens
+      const sellUsd=tr.invested*tr.holdPct*exit.sellPct*tr.mult;
+      tr.returns.push({label:`${exit.label} sell`,usd:sellUsd});
+      tr.holdPct=tr.holdPct*(1-exit.sellPct); // reduce holding
+      tr.phase++;
+      S.balance+=sellUsd;
+      S.totalPnlUsd+=sellUsd-(tr.invested*tr.holdPct*exit.sellPct);
+      addWin();
+      toast(`${exit.label==="2x"?"🎯":exit.label==="5x"?"🚀":"💎"} ${tr.sym} ${exit.label}! Sold ${exit.sellPct*100}% → +${fU(sellUsd)}`,"#22c55e");
+      if(!S.paperMode)window.open(`https://jup.ag/swap/${tr.mint}-SOL`,"_blank");
+      break;
+    }
+  }
+
+  // ── MOONBAG EXIT (phase 4 = after 10x) ──
+  if(tr.phase===4){
+    const hm=(Date.now()-tr.entryTime)/60000;
+    const sigs=
+      (dx.ch1<-20?1:0)+
+      (dx.vol1<tr.peakVol*0.35?1:0)+
+      (dx.liq<tr.entryLiq*0.78?1:0)+
+      (hm>45&&Math.random()<0.10?1:0);
+    if(sigs>=2){
+      const mv=tr.invested*tr.holdPct*tr.mult;
+      S.balance+=mv;S.totalPnlUsd+=mv;
+      closeT(tr,`🌙 Moonbag closed (${sigs} signals)`,mv);
+      toast(`🌙 ${tr.sym} moonbag → ${fU(mv)}`,"#a78bfa");
+      if(tr.pnl>0)addWin();else addLoss();
+      if(!S.paperMode)window.open(`https://jup.ag/swap/${tr.mint}-SOL`,"_blank");
+    }
+  }
+
+}catch(e){console.error("Tick:",e);}
+```
+
+}
+
+// Recalculate portfolio
+S.portfolioVal=S.balance+S.activeTrades.reduce((s,t)=>{
+return s+t.invested*t.holdPct*Math.max(1+(t.pnl||0)/100,0.01);
+},0);
+render();
+}
+
+function closeT(tr,reason,exitUsd){
+S.activeTrades=S.activeTrades.filter(t=>t.id!==tr.id);
+S.closedTrades.unshift({…tr,exitReason:reason,exitUsd,closedAt:Date.now()});
+if(S.closedTrades.length>60)S.closedTrades.pop();
+}
+function addWin(){S.wins++;S.losses=0;
+if(S.wins>=1&&S.botMode===“STRICT”)S.botMode=“RECOVERY”;
+if(S.wins>=2&&S.botMode===“RECOVERY”)S.botMode=“NORMAL”;}
+function addLoss(){S.losses++;S.wins=0;if(S.losses>=3)S.botMode=“STRICT”;}
+
+function manualSell(id,pct){
+const tr=S.activeTrades.find(t=>t.id===id);if(!tr)return;
+const cv=tr.invested*tr.holdPct*Math.max(1+(tr.pnl||0)/100,0.01);
+const sv=cv*pct;
+S.balance+=sv;
+toast(`✋ ${tr.sym} sold ${Math.round(pct*100)}% → +${fU(sv)}`,”#f59e0b”);
+if(!S.paperMode)window.open(`https://jup.ag/swap/${tr.mint}-SOL`,”_blank”);
+if(pct>=1){
+closeT(tr,`Manual ${Math.round(pct*100)}%`,sv);
+if(tr.pnl>0)addWin();else addLoss();
+}else{
+tr.holdPct*=(1-pct);
+}
+render();
+}
+
+function startBot(){
+if(!S.heliusKey){toast(“⚠ Enter Helius API key”,”#f59e0b”);return;}
+S.botRunning=true;
+clearInterval(S.scanTimer);clearInterval(S.priceTimer);clearInterval(S.balTimer);
+S.scanTimer =setInterval(scanCycle,SCAN_MS);
+S.priceTimer=setInterval(priceTick,TICK_MS);
+// Live mode: refresh real wallet balance every 30s
+if(!S.paperMode){
+fetchWalletBalance();
+S.balTimer=setInterval(fetchWalletBalance,BAL_MS);
+}
+scanCycle();
+toast(`▶ Bot started · ${S.paperMode?"PAPER":"LIVE"}`,”#22c55e”);
+render();
+}
+function stopBot(){
+S.botRunning=false;
+clearInterval(S.scanTimer);clearInterval(S.priceTimer);clearInterval(S.balTimer);
+toast(“■ Bot stopped”,”#f87171”);render();
+}
+
+// ═══════════════════════════════════════
+//  PHANTOM
+// ═══════════════════════════════════════
+async function connectPhantom(){
+if(window.solana?.isPhantom){
+try{
+const resp=await window.solana.connect();
+S.walletPubkey=resp.publicKey.toString();
+persist();
+if(!S.paperMode)await fetchWalletBalance();
+toast(`✅ Connected · ${sh(S.walletPubkey)}`,”#22c55e”);
+render();return;
+}catch(e){}
+}
+const url=encodeURIComponent(window.location.href);
+const ref=encodeURIComponent(window.location.origin||window.location.href);
+window.location.href=`https://phantom.app/ul/browse/${url}?ref=${ref}`;
+}
+
+// ═══════════════════════════════════════
+//  COPY CA
+// ═══════════════════════════════════════
+function copyCA(addr,bid){
+navigator.clipboard.writeText(addr).catch(()=>{
+const el=document.createElement(“textarea”);
+el.value=addr;document.body.appendChild(el);
+el.select();document.execCommand(“copy”);
+document.body.removeChild(el);
+});
+const btn=$(bid);
+if(btn){btn.classList.add(“ok”);btn.querySelector(”.cl”).textContent=“✓ COPIED”;
+setTimeout(()=>{btn.classList.remove(“ok”);if(btn.querySelector(”.cl”))btn.querySelector(”.cl”).textContent=“CA”;},2000);}
+toast(“CA copied”,”#22c55e”);
+}
+
+// ═══════════════════════════════════════
+//  MANUAL SCANNER
+// ═══════════════════════════════════════
+async function runScan(){
+const inp=$(“sinp”);const mint=inp?.value?.trim();
+if(!mint){toast(“Enter a contract address”,”#f59e0b”);return;}
+const res=$(“sres”);
+if(res)res.innerHTML=`<div style="text-align:center;padding:20px;font-size:11px;color:#22c55e" class="blink">● Fetching live data…</div>`;
+const[dx,hx]=await Promise.all([dexData(mint),heliusData(mint)]);
+if(!dx){if(res)res.innerHTML=`<div style="color:#f87171;font-size:11px;padding:10px">Not found on Dexscreener</div>`;return;}
+const token={mint,name:dx.name,sym:dx.sym,price:dx.price,liq:dx.liq,
+vol24:dx.vol24,age:dx.age,top10:hx?.top10||0,mintAuth:hx?.mintAuth||false,
+freezeAuth:hx?.freezeAuth||false,buys:dx.buys,sells:dx.sells,ch1:dx.ch1};
+const r=runStrategy(token);
+const ccid=`cca_s${Date.now()}`;
+if(res)res.innerHTML=` <div class="card fu"> <div class="row" style="margin-bottom:10px"> <div> <div style="font-weight:800;font-size:16px;color:#fff">${token.sym}</div> <div style="font-size:9px;color:#444">${token.name}</div> </div> <span class="chip" style="background:${r.pass?"#22c55e":"#f87171"}18;color:${r.pass?"#22c55e":"#f87171"};border:1px solid ${r.pass?"#22c55e":"#f87171"}33"> ${r.pass?"✓ PASS":"✕ REJECT"} </span> </div> <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px"> ${[["Liquidity",`$${token.liq?.toFixed(0)}`],["Vol 24h",`$${token.vol24?.toFixed(0)}`], ["Top 10",`${token.top10?.toFixed(1)}%`],["Age",`${token.age?.toFixed(0)||”?”}m`], ["1h",fP(token.ch1||0)],["Price",`$${token.price?.toFixed(8)}`]] .map(([k,v])=>`<div style="background:#111;border-radius:8px;padding:8px 10px;border:1px solid #1a1a1a">
+<div style="font-size:9px;color:#333">${k}</div>
+<div style="font-size:12px;font-weight:700;color:#fff;margin-top:2px">${v}</div>
+</div>`).join("")} </div> <div class="inset" style="margin-bottom:10px"> ${r.checks.map(c=>`<div class="cr">
+<span style=“font-size:9px;color:${c.s===“PASS”?”#22c55e”:c.s===“REJECT”?”#f87171”:”#444”};font-weight:800;width:36px;flex-shrink:0”>${c.s}</span>
+<span style="font-size:10px;color:#555;flex:1">${c.l}</span>
+<span style="font-size:9px;color:#2a2a2a;text-align:right;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.r}</span>
+</div>`).join("")} </div> <button id="${ccid}" class="cca" onclick="copyCA('${mint}','${ccid}')"> <span class="cl" style="font-size:9px;color:#2a2a2a;font-weight:800;flex-shrink:0">CA</span> <span style="font-size:9px;color:#333;flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace">${mint}</span> <span style="font-size:13px;color:#2a2a2a">⎘</span> </button> <div style="margin-top:10px;background:${r.pass?"#22c55e11":"#f8717111"};border:1px solid ${r.pass?"#22c55e33":"#f8717133"};border-radius:10px;padding:11px"> <div style="font-size:11px;color:${r.pass?"#22c55e":"#f87171"};font-weight:800"> ${r.pass?`✓ APPROVED · ${r.sig} SIGNAL`:"✕ REJECTED"} </div> <div style="font-size:10px;color:#555;margin-top:3px">${r.pass?"Will buy $5 on next scan":r.reason}</div> </div> </div>`;
+}
+
+// toggle log entry expanded
+function toggleLog(id){
+const entry=S.scanLog.find(l=>l.id===id);
+if(entry)entry.expanded=!entry.expanded;
+render();
+}
+
+// ═══════════════════════════════════════
+//  RENDER HELPERS
+// ═══════════════════════════════════════
+function chip(label,col,sm=false){
+return `<span class="chip" style="background:${col}18;color:${col};border:1px solid ${col}33;font-size:${sm?8:9}px">${label}</span>`;
+}
+function ccaHTML(mint,uid){
+return `<button id="${uid}" class="cca" onclick="copyCA('${mint}','${uid}')"> <span class="cl" style="font-size:9px;color:#2a2a2a;font-weight:800;flex-shrink:0">CA</span> <span style="font-size:9px;color:#333;flex:1;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace">${mint}</span> <span style="font-size:13px;color:#2a2a2a">⎘</span> </button>`;
+}
+
+function roadHTML(tr){
+// 4 milestones: Entry → 2x → 5x → 10x → 🌙
+const phase=tr.phase; // 1,2,3,4(moonbag)
+const mult=tr.mult||1;
+// Progress within current phase
+const phaseTargets=[1,2,5,10];
+const phasePcts=[0,25,50,75,100];
+let fillPct=0;
+if(phase===1)fillPct=Math.min((Math.log(Math.max(mult,1))/Math.log(2))*25,25);
+else if(phase===2)fillPct=25+Math.min(((mult-2)/(5-2))*25,25);
+else if(phase===3)fillPct=50+Math.min(((mult-5)/(10-5))*25,25);
+else fillPct=75;
+
+const fillCol=phase===4?”#a78bfa”:mult>5?”#22c55e”:mult>2?”#f59e0b”:”#22c55e44”;
+const dots=[
+{l:“IN”,p:0,done:true},
+{l:“2x”,p:25,done:phase>=2},
+{l:“5x”,p:50,done:phase>=3},
+{l:“10x”,p:75,done:phase>=4},
+{l:“🌙”,p:100,done:false},
+];
+return `<div class="road"> <div class="road-line"><div class="road-prog" style="width:${fillPct}%;background:${fillCol}"></div></div> ${dots.map(d=>`
+<div class="rdot" style="left:calc(${d.p}% - ${d.p===0?0:d.p===100?18:10}px)">
+<div class=“rcirc” style=“background:${d.done?”#22c55e”:”#111”};border:2px solid ${d.done?”#22c55e”:”#1e1e1e”};${d.done?“box-shadow:0 0 8px #22c55e55”:””}”>
+${d.done?“✓”:””}
+</div>
+<span style=“font-size:8px;font-weight:800;color:${d.done?”#22c55e”:d.l===“10x”||d.l===“🌙”?”#333”:”#1a1a1a”}”>${d.l}</span>
+</div>`).join(””)}
+
+  </div>`;
+}
+
+function phaseLabel(phase){
+return phase===1?“RIDING TO 2x”:phase===2?“RIDING TO 5x”:phase===3?“RIDING TO 10x”:“🌙 MOONBAG”;
+}
+function phaseCol(phase){
+return phase===1?”#f59e0b”:phase===2?”#fb923c”:phase===3?”#22c55e”:”#a78bfa”;
+}
+
+function tradeCard(tr){
+const pnl=tr.pnl||0,mult=tr.mult||1,phase=tr.phase;
+const cv=tr.invested*tr.holdPct*Math.max(mult,0.01);
+const uid=`cca_t${tr.id}`;
+const totalReturned=tr.returns.reduce((s,r)=>s+r.usd,0);
+return `<div class="card fu" style="border-color:${phase===4?"#a78bfa33":pnl>50?"#22c55e33":pnl<-15?"#f8717122":"#1a1a1a"}"> <div class="row" style="margin-bottom:6px"> <div> <span style="font-size:20px;font-weight:800;color:#fff;letter-spacing:-.5px">${tr.sym}</span> ${tr.paper?`<span style="font-size:8px;color:#f59e0b;margin-left:6px">PAPER</span>`:""} <div style="font-size:8px;color:#1a1a1a;margin-top:1px">${ag(tr.entryTime)} ago</div> </div> <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"> ${chip(tr.sig,tr.sig==="STRONG"?"#22c55e":"#f59e0b")} ${chip(phaseLabel(phase),phaseCol(phase))} </div> </div> ${ccaHTML(tr.mint,uid)} <div style="margin-top:12px">${roadHTML(tr)}</div> <div style="text-align:center;margin:6px 0 12px"> <div style="font-size:38px;font-weight:800;color:${pC(pnl)};letter-spacing:-2px;line-height:1">${mult.toFixed(2)}x</div> <div style="font-size:11px;color:${pC(pnl)};margin-top:2px">${fP(pnl)}</div> </div> <div class="inset"> <div style="font-size:8px;color:#1a1a1a;font-weight:800;letter-spacing:.5px;margin-bottom:7px">POSITION</div> <div style="display:flex;flex-direction:column;gap:4px"> <div class="row"><span style="font-size:10px;color:#333">Invested</span><span style="font-size:10px;color:#555">${fU(tr.invested)}</span></div> ${tr.returns.map(r=>`
+<div class="row">
+<span style="font-size:10px;color:#22c55e">✓ ${r.label}</span>
+<span style="font-size:10px;color:#22c55e;font-weight:800">+${fU(r.usd)}</span>
+</div>`).join("")} <div class="row"> <span style="font-size:10px;color:#444">Holding (${(tr.holdPct*100).toFixed(0)}%${phase>1?" free":""})</span> <span style="font-size:10px;color:${pC(pnl)};font-weight:700">${fU(cv)}</span> </div> <div class="row"><span style="font-size:10px;color:#333">Entry</span><span style="font-size:10px;color:#555">$${tr.entryPrice?.toFixed(8)}</span></div> <div class="row"><span style="font-size:10px;color:#444">Now</span><span style="font-size:10px;color:${pC(pnl)};font-weight:700">$${tr.curPrice?.toFixed(8)}</span></div> ${totalReturned>0?`<div class="row" style="border-top:1px solid #111;padding-top:4px;margin-top:2px">
+<span style="font-size:10px;color:#22c55e88">Total returned</span>
+<span style="font-size:10px;color:#22c55e;font-weight:800">+${fU(totalReturned)}</span>
+</div>`:""} </div> </div> ${phase===1?`<div style="margin-bottom:10px">
+<div class="row" style="margin-bottom:3px">
+<span style="font-size:8px;color:#1a1a1a">STOP-LOSS -40%</span>
+<span style=“font-size:9px;color:${pnl<=-25?”#f87171”:”#333”}”>${fP(pnl)}</span>
+</div>
+<div class="bar"><div class=“barf” style=“width:${Math.min(Math.max((pnl+40)/140*100,0),100)}%;background:${pnl<-25?”#f87171”:pnl<-10?”#f59e0b”:”#22c55e33”}”></div></div>
+</div>`:""} <div style="font-size:8px;color:#2a2a2a;margin-bottom:6px;font-weight:800;letter-spacing:.5px">MANUAL EXIT</div> <div class="sgrid"> ${[{l:"25%",p:.25,c:"#f59e0b"},{l:"50%",p:.5,c:"#fb923c"},{l:"80%",p:.8,c:"#f87171"},{l:"100%",p:1,c:"#ef4444"}] .map(b=>`<button class="sbtn" onclick="manualSell(${tr.id},${b.p})" style="background:${b.c}14;color:${b.c};border:1px solid ${b.c}44">SELL ${b.l}</button>`)
+.join(””)}
+</div>
+
+  </div>`;
+}
+
+// ── LOG ENTRY with expandable checks ──
+function logEntryHTML(l){
+const col=l.result===“BUY”?”#22c55e”:”#333”;
+const uid=`cca_l${l.id}`;
+return `<div class="log-entry"> <div class="log-row" onclick="toggleLog(${l.id})" style="cursor:pointer"> <span style="font-size:8px;color:#1a1a1a;white-space:nowrap;flex-shrink:0">${new Date(l.time).toLocaleTimeString()}</span> ${chip(l.result,col,true)} <span style="font-size:10px;font-weight:700;color:#555">${l.sym||"—"}</span> <span style="font-size:9px;color:#1e1e1e;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.reason||""}</span> <span style="font-size:10px;color:#2a2a2a;margin-left:4px">${l.expanded?"▲":"▼"}</span> </div> ${l.expanded?`
+<div style="padding:0 14px 10px">
+<!-- mini metrics -->
+<div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+<span style="font-size:9px;color:#333">Liq: <span style="color:#555">$${l.liq?.toFixed(0)||”?”}</span></span>
+<span style="font-size:9px;color:#333">Vol: <span style="color:#555">$${l.vol24?.toFixed(0)||”?”}</span></span>
+<span style="font-size:9px;color:#333">Price: <span style="color:#555">$${l.price?.toFixed(8)||”?”}</span></span>
+</div>
+<!-- checks -->
+<div class="inset" style="margin-bottom:8px">
+${(l.checks||[]).map(c=>`<div class="cr"> <span style="font-size:9px;color:${c.s==="PASS"?"#22c55e":c.s==="REJECT"?"#f87171":"#444"};font-weight:800;width:36px;flex-shrink:0">${c.s}</span> <span style="font-size:10px;color:#555;flex:1">${c.l}</span> <span style="font-size:9px;color:#2a2a2a;text-align:right;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.r}</span> </div>`).join(””)}
+</div>
+${ccaHTML(l.mint,uid)}
+</div>`:””}
+
+  </div>`;
+}
+
+// ═══════════════════════════════════════
+//  MAIN RENDER
+// ═══════════════════════════════════════
+function render(){
+const app=$(“app”);
+if(S.screen===“setup”){app.innerHTML=setupHTML();return;}
+
+const startingBal=S.paperMode?10:S.portfolioVal; // live: use actual wallet value
+const pr=S.paperMode?((S.portfolioVal-10)/10)*100:((S.portfolioVal-(S.portfolioVal/(1+(S.totalPnlUsd/Math.max(S.portfolioVal-S.totalPnlUsd,1)))))/S.portfolioVal)*100||0;
+const tc=S.closedTrades.length;
+const tw=S.closedTrades.filter(t=>t.pnl>0).length;
+const wr=tc?Math.round(tw/tc*100):0;
+
+app.innerHTML=`
+
+  <div class="hdr">
+    <div class="row">
+      <div>
+        <div style="font-size:14px;font-weight:800;letter-spacing:-.3px">◈ REX
+          <span style="font-size:9px;color:${S.paperMode?"#f59e0b":"#22c55e"};font-weight:700;margin-left:8px">${S.paperMode?"📄 PAPER":"🔴 LIVE"}</span>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:5px;align-items:center;flex-wrap:wrap">
+          ${chip(S.botMode,mc[S.botMode])}
+          ${S.scanning?`<span style="font-size:9px;color:#22c55e" class="blink">● SCANNING</span>`:""}
+          ${S.activeTrades.some(t=>t.phase<=3)?`<span style="font-size:9px;color:#f59e0b" class="blink">● IN TRADE</span>`:""}
+          ${S.activeTrades.some(t=>t.phase===4)?`<span style="font-size:9px;color:#a78bfa">🌙 MOONBAG</span>`:""}
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:9px;color:#222">${S.paperMode?"PORTFOLIO":"WALLET BALANCE"}</div>
+        <div style="font-size:26px;font-weight:800;letter-spacing:-1px;line-height:1.1;color:${S.paperMode?(S.portfolioVal>=10?"#22c55e":"#f87171"):"#22c55e"}">${fU(S.portfolioVal)}</div>
+        ${S.paperMode?`<div style="font-size:10px;color:${pr>=0?"#22c55e88":"#f8717188"}">${fP(pr)}</div>`:`<div style="font-size:9px;color:#333">${S.walletPubkey?sh(S.walletPubkey):"not connected"}</div>`}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button onclick="${S.botRunning?"stopBot()":"startBot()"}" style="flex:1;padding:9px;border-radius:8px;font-size:10px;font-weight:800;
+        background:${S.botRunning?"#f8717122":"#22c55e22"};color:${S.botRunning?"#f87171":"#22c55e"};
+        border:1px solid ${S.botRunning?"#f8717144":"#22c55e44"}">
+        ${S.botRunning?"■ STOP BOT":"▶ START BOT"}
+      </button>
+      <button onclick="goSetup()" style="padding:9px 14px;border-radius:8px;background:#111;color:#555;border:1px solid #1a1a1a;font-size:12px">⚙</button>
+    </div>
+    <div style="margin-top:9px;display:flex;gap:8px;align-items:center">
+      <div style="flex:1;height:2px;background:#0d0d0d;border-radius:99px;overflow:hidden">
+        <div style="height:100%;background:${S.paperMode?(pr>=0?"#22c55e":"#f87171"):"#22c55e"};width:${S.paperMode?Math.min((S.portfolioVal/10)*50,100):50}%;transition:width 1s;border-radius:99px"></div>
+      </div>
+      <span style="font-size:8px;color:#222;white-space:nowrap">Cash: <span style="color:#333">${fU(S.balance)}</span></span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tbtn ${S.tab==="trade"?"on":""}" onclick="setT('trade')">POSITIONS</button>
+    <button class="tbtn ${S.tab==="scan"?"on":""}"  onclick="setT('scan')">SCANNER</button>
+    <button class="tbtn ${S.tab==="hist"?"on":""}"  onclick="setT('hist')">HISTORY</button>
+    <button class="tbtn ${S.tab==="log"?"on":""}"   onclick="setT('log')">LOG</button>
+  </div>
+
+  <!-- POSITIONS -->
+
+  <div class="pane ${S.tab==="trade"?"on":""}">
+    <div class="stat4">
+      ${[["CASH",fU(S.balance),"#aaa"],["WIN%",`${wr}%`,"#22c55e"],
+         ["CLOSED",tc,"#aaa"],["STREAK",`${S.losses>=3?"L":"W"}${S.losses>=3?S.losses:S.wins}`,S.losses>=3?"#f87171":"#22c55e"]]
+        .map(([l,v,c])=>`<div class="scard"><div style="font-size:8px;color:#222">${l}</div><div style="font-size:13px;font-weight:800;color:${c};margin-top:2px">${v}</div></div>`).join("")}
+    </div>
+    <!-- strategy strip -->
+    <div class="inset" style="margin-bottom:14px">
+      <div style="display:flex;justify-content:space-around;align-items:center">
+        ${[["$5","Entry"],["2x","→80%"],["5x","→50%"],["10x","→50%"],["🌙","Moon"]]
+          .map(([v,l])=>`<div style="text-align:center">
+            <div style="font-size:11px;font-weight:800;color:#444">${v}</div>
+            <div style="font-size:7px;color:#1a1a1a;margin-top:2px">${l}</div>
+          </div>`).join("")}
+      </div>
+    </div>
+    ${S.activeTrades.length===0?`
+      <div class="card" style="text-align:center;padding:32px 16px">
+        <div style="font-size:28px;margin-bottom:8px">${S.botRunning?"⏳":"⏸"}</div>
+        <div style="font-size:11px;color:#1e1e1e">${S.botRunning?"Scanning Dexscreener…":"Press START BOT"}</div>
+      </div>`:S.activeTrades.map(tradeCard).join("")}
+  </div>
+
+  <!-- SCANNER -->
+
+  <div class="pane ${S.tab==="scan"?"on":""}">
+    <div style="font-size:10px;color:#333;margin-bottom:12px">Paste any Solana CA — runs all 3 layers live.</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <input id="sinp" class="inp" placeholder="Paste contract address…" style="flex:1"/>
+      <button onclick="runScan()" style="padding:10px 14px;border-radius:9px;background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;font-size:11px;font-weight:800;white-space:nowrap">SCAN ◈</button>
+    </div>
+    <div id="sres"></div>
+  </div>
+
+  <!-- HISTORY -->
+
+  <div class="pane ${S.tab==="hist"?"on":""}">
+    <div class="row" style="margin-bottom:12px">
+      <span style="font-size:9px;color:#2a2a2a;font-weight:800">CLOSED (${tc})</span>
+      <span style="font-size:10px;color:${S.totalPnlUsd>=0?"#22c55e":"#f87171"};font-weight:700">${S.totalPnlUsd>=0?"+":""}${fU(S.totalPnlUsd)} realized</span>
+    </div>
+    ${tc===0?`<div style="text-align:center;padding:40px 0;font-size:11px;color:#141414">No closed trades yet</div>`:""}
+    ${S.closedTrades.map(t=>{
+      const uid=`cca_h${t.id}`;const pnl=t.pnl||0;
+      const totalRet=t.returns?.reduce((s,r)=>s+r.usd,0)||0;
+      return `<div class="card" style="border-color:${pnl>0?"#22c55e18":"#1a1a1a"}">
+        <div class="row" style="margin-bottom:4px">
+          <div>
+            <span style="font-weight:800;font-size:14px;color:#fff">${t.sym}</span>
+            ${t.paper?`<span style="font-size:8px;color:#f59e0b;margin-left:6px">PAPER</span>`:""}
+          </div>
+          <div style="display:flex;gap:5px;align-items:center">
+            ${chip(`Phase ${t.phase}`,t.phase>=4?"#a78bfa":t.phase>=3?"#22c55e":"#555",true)}
+            <span style="font-size:13px;font-weight:800;color:${pC(pnl)}">${fP(pnl)}</span>
+          </div>
+        </div>
+        ${t.returns?.map(r=>`<div style="font-size:9px;color:#22c55e;margin-bottom:2px">✓ ${r.label} → +${fU(r.usd)}</div>`).join("")||""}
+        ${totalRet>0?`<div style="font-size:10px;color:#22c55e;font-weight:800;margin-bottom:4px">Total returned: +${fU(totalRet)}</div>`:""}
+        ${ccaHTML(t.mint,uid)}
+        <div style="margin-top:6px;font-size:9px;color:#222">${t.exitReason} · ${ag(t.closedAt)}</div>
+      </div>`;
+    }).join("")}
+  </div>
+
+  <!-- LOG — every scanned CA -->
+
+  <div class="pane ${S.tab==="log"?"on":""}" style="padding:0">
+    <div style="padding:10px 14px;border-bottom:1px solid #111;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:9px;color:#222;font-weight:800">SCAN LOG · ${S.scanLog.length} tokens</span>
+      <span style="font-size:8px;color:#1a1a1a">Tap row to expand</span>
+    </div>
+    ${S.scanning?`<div style="padding:10px 14px;font-size:9px;color:#22c55e" class="blink">● Scanning Dexscreener…</div>`:""}
+    ${S.scanLog.length===0?`<div style="text-align:center;padding:40px 0;font-size:11px;color:#141414">Waiting for first scan…</div>`:""}
+    ${S.scanLog.map(l=>logEntryHTML(l)).join("")}
+  </div>`;
+}
+
+function setupHTML(){
+return `<div class="setup">
+<div style="text-align:center;margin-bottom:28px;padding-top:20px">
+<div style="font-size:36px;margin-bottom:8px;color:#22c55e">◈</div>
+<div style="font-size:20px;font-weight:800;color:#fff">REX BOT</div>
+<div style="font-size:10px;color:#333;margin-top:4px">Solana · 2x→5x→10x→🌙 · Phantom</div>
+</div>
+
+```
+<button class="phan-btn" onclick="connectPhantom()">
+  <svg width="22" height="22" viewBox="0 0 128 128" fill="none">
+    <rect width="128" height="128" rx="64" fill="white" fill-opacity=".15"/>
+    <path d="M89 55c-1-6-6.5-10.5-13-10.5-7.2 0-13 5.8-13 13 0 1.2.2 2.4.5 3.5-3 .4-5.8 1.8-7.7 4-1.8 2.2-2.7 5-2.4 7.8.5 5.7 5.4 10 11.1 10h24.5c6.1 0 11-4.9 11-11 0-4.2-2.3-7.9-5.8-10L89 55z" fill="white"/>
+  </svg>
+  ${S.walletPubkey?`✓ Connected · ${sh(S.walletPubkey)}`:"Connect Phantom Wallet"}
+</button>
+
+<div class="warn">⚠ Keys stored only in your browser's local storage — never sent anywhere. Only trade what you can afford to lose.</div>
+
+<div class="grp">
+  <span class="lbl">Helius API Key</span>
+  <input class="inp" id="hkey" type="password" placeholder="Paste Helius API key…"
+    value="${S.heliusKey}" oninput="S.heliusKey=this.value"/>
+  <div style="font-size:9px;color:#333;margin-top:5px">Free key → dashboard.helius.dev</div>
+</div>
+
+<div class="grp">
+  <span class="lbl">Trading Mode</span>
+  <div class="mode-row">
+    <button class="mode-btn" onclick="S.paperMode=true;render()"
+      style="background:${S.paperMode?"#f59e0b1a":"#0c0c0c"};color:${S.paperMode?"#f59e0b":"#333"};border:1px solid ${S.paperMode?"#f59e0b44":"#1a1a1a"}">
+      📄 PAPER (Safe)
+    </button>
+    <button class="mode-btn" onclick="S.paperMode=false;render()"
+      style="background:${!S.paperMode?"#f871711a":"#0c0c0c"};color:${!S.paperMode?"#f87171":"#333"};border:1px solid ${!S.paperMode?"#f8717144":"#1a1a1a"}">
+      🔴 LIVE
+    </button>
+  </div>
+  ${!S.paperMode?`<div style="font-size:9px;color:#f87171;margin-top:5px">⚠ LIVE opens Jupiter in Phantom for each trade. You confirm every swap.</div>`:""}
+  ${!S.paperMode&&S.walletPubkey?`<div style="font-size:9px;color:#22c55e;margin-top:4px">✓ Wallet balance shown live from Helius RPC</div>`:""}
+</div>
+
+<div class="inset" style="margin-bottom:20px">
+  <div style="font-size:8px;color:#2a2a2a;font-weight:800;letter-spacing:.5px;margin-bottom:8px">EXIT STRATEGY</div>
+  <div style="display:flex;justify-content:space-around">
+    ${[["$5","Entry"],["2x","Sell 80%"],["5x","Sell 50%"],["10x","Sell 50%"],["🌙","Moon"]]
+      .map(([v,l])=>`<div style="text-align:center">
+        <div style="font-size:10px;font-weight:800;color:#444">${v}</div>
+        <div style="font-size:7px;color:#1a1a1a;margin-top:2px">${l}</div>
+      </div>`).join("")}
+  </div>
+  <div style="margin-top:8px;font-size:8px;color:#1a1a1a;text-align:center">Stop-loss -40% before first exit · 3-layer strategy filter</div>
+</div>
+
+<button class="launch-btn" onclick="launch()">Launch Dashboard →</button>
+
+<div style="margin-top:16px;text-align:center;font-size:9px;color:#1a1a1a;line-height:1.9">
+  L1: Liquidity · Mint/Freeze · Blacklist<br>
+  L2: Concentration · Bot · Vol/Liq · Fee<br>
+  L3: Narrative · Momentum · Signal
+</div>
+```
+
+  </div>`;
+}
+
+function setT(t){S.tab=t;render();window.scrollTo(0,0);}
+function goSetup(){S.screen=“setup”;render();}
+function launch(){
+if(!S.heliusKey.trim()){toast(“⚠ Enter your Helius API key”,”#f59e0b”);return;}
+persist();
+S.screen=“dashboard”;
+if(!S.paperMode&&S.walletPubkey)fetchWalletBalance();
+else S.portfolioVal=S.balance;
+render();
+}
+
+// ── BOOT ──
+hydrate();
+if(S.heliusKey)S.screen=“dashboard”;
+render();
+</script>
+
+</body>
+</html>
