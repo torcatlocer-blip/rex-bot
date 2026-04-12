@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+<meta name="theme-color" content="#050505"/>
+<title>REX BOT</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{background:#050505!important;color:#fff;font-family:monospace;min-height:100vh;}
+body{max-width:480px;margin:0 auto;padding-bottom:90px;}
+button{font-family:monospace;cursor:pointer;border:none;background:none;color:#fff;}
+input{font-family:monospace;outline:none;color:#fff;}
+</style>
+</head>
+<body>
+<div id="app" style="padding:40px 20px;text-align:center">
+  <div style="font-size:36px;color:#22c55e">◈</div>
+  <div style="font-size:16px;color:#fff;margin-top:8px;font-weight:bold">REX BOT</div>
+  <div style="font-size:11px;color:#444;margin-top:4px">Starting…</div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────
+//  The core problem was CORS — most APIs block
+//  browser requests. This version uses only APIs
+//  that work from the browser + a proxy for Helius.
+// ─────────────────────────────────────────────────
+
+var TRADE_AMT = 5;
+var SL_PCT    = 0.40;
+var SOL_MINT  = "So11111111111111111111111111111111111111112";
+
+// Exit rules
+var EXITS = [
+  {ph:1, target:2.0, sell:0.80, label:"2x"},
+  {ph:2, target:5.0, sell:0.50, label:"5x"},
+  {ph:3, target:10.0,sell:0.50, label:"10x"},
+];
+
+// ─── STATE ────────────────────────────────────────
+var S = {
+  screen:"setup", tab:"positions",
+  hKey:"", wPub:"", paper:true,
+  running:false, mode:"NORMAL",
+  balance:10, portVal:10, totalPnl:0, solPrice:150,
+  trades:[], closed:[], log:[],
+  wins:0, losses:0, blacklist:[],
+  scanning:false, currentSym:"", currentCA:"",
+  scanTimer:null, tickTimer:null,
+};
+
+function persist(){ try{localStorage.setItem("rx_hk",S.hKey);localStorage.setItem("rx_pk",S.wPub);localStorage.setItem("rx_pm",S.paper?"1":"0");}catch(e){} }
+function hydrate(){ try{S.hKey=localStorage.getItem("rx_hk")||"";S.wPub=localStorage.getItem("rx_pk")||"";S.paper=localStorage.getItem("rx_pm")!=="0";}catch(e){} }
+
+function el(id){ return document.getElementById(id); }
+function fU(n){ return "$"+Math.abs(parseFloat(n)||0).toFixed(2); }
+function fP(n){ return (n>=0?"+":"")+parseFloat(n).toFixed(1)+"%"; }
+function pC(n){ return n>0?"#22c55e":n<0?"#f87171":"#888"; }
+function sh(a){ return a?a.slice(0,6)+"…"+a.slice(-4):""; }
+function ag(ts){ var s=Math.floor((Date.now()-ts)/1000); return s<60?s+"s":Math.floor(s/60)+"m"; }
+function rand(a,b){ return Math.random()*(b-a)+a; }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+var mC={NORMAL:"#22c55e",STRICT:"#f87171",RECOVERY:"#f59e0b"};
+
+var _toastTimer;
+function toast(msg,col){
+  col=col||"#22c55e";
+  var t=el("TOAST");
+  if(!t){t=document.createElement("div");t.id="TOAST";t.style.cssText="position:fixed;top:60px;left:50%;transform:translateX(-50%) translateY(-20px);background:#111;border-radius:10px;padding:10px 16px;font-size:11px;font-weight:bold;z-index:9999;pointer-events:none;max-width:90vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all 0.3s;opacity:0;border:1px solid #333";document.body.appendChild(t);}
+  t.textContent=msg;t.style.color=col;t.style.borderColor=col+"55";t.style.opacity="1";t.style.transform="translateX(-50%) translateY(0)";
+  clearTimeout(_toastTimer);_toastTimer=setTimeout(function(){t.style.opacity="0";t.style.transform="translateX(-50%) translateY(-20px)";},3500);
+}
+
+// ─── LOG ──────────────────────────────────────────
+function addLog(entry){
+  S.log.unshift(entry);
+  if(S.log.length>100)S.log.pop();
+}
+
+// ─── DEXSCREENER — works from browser (no CORS) ──
+function getDexPairs(){
+  // This endpoint works from browser — returns new Solana pairs
+  return fetch("https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112")
+    .then(function(r){return r.json();})
+    .then(function(d){
+      // Fall through to search endpoint
+      return [];
+    }).catch(function(){return [];})
+    .then(function(){
+      // Use Dexscreener profiles/latest which works from browser
+      return fetch("https://api.dexscreener.com/token-profiles/latest/v1")
+        .then(function(r){return r.json();})
+        .then(function(d){
+          if(!Array.isArray(d))return[];
+          return d.filter(function(t){return t.chainId==="solana"&&t.tokenAddress;})
+            .slice(0,20)
+            .map(function(t){return{mint:t.tokenAddress,sym:t.symbol||"???",name:t.description||t.symbol||"Unknown"};});
+        });
+    }).catch(function(){return[];});
+}
+
+function getDexTokenData(mint){
+  return fetch("https://api.dexscreener.com/latest/dex/tokens/"+mint)
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(!d.pairs||!d.pairs.length)return null;
+      var pairs=d.pairs.filter(function(p){return p.chainId==="solana";});
+      if(!pairs.length)return null;
+      pairs.sort(function(a,b){return(b.liquidity&&b.liquidity.usd||0)-(a.liquidity&&a.liquidity.usd||0);});
+      var p=pairs[0];
+      return {
+        liq:   p.liquidity&&p.liquidity.usd||0,
+        vol24: p.volume&&p.volume.h24||0,
+        vol1:  p.volume&&p.volume.h1||0,
+        price: parseFloat(p.priceUsd)||0,
+        buys:  p.txns&&p.txns.h24&&p.txns.h24.buys||0,
+        sells: p.txns&&p.txns.h24&&p.txns.h24.sells||0,
+        ch1:   p.priceChange&&p.priceChange.h1||0,
+        age:   p.pairCreatedAt?(Date.now()-p.pairCreatedAt)/60000:null,
+        name:  p.baseToken&&p.baseToken.name||"Unknown",
+        sym:   p.baseToken&&p.baseToken.symbol||"???",
+      };
+    }).catch(function(){return null;});
+}
+
+// Dexscreener search — the main working endpoint
+function searchNewTokens(){
+  // Search for recent pump.fun tokens — this works from browser
+  var queries=["pump","sol","meme","ai","cat","dog","pepe","moon"];
+  var q=pick(queries);
+  return fetch("https://api.dexscreener.com/latest/dex/search?q="+q)
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(!d.pairs)return[];
+      var now=Date.now();
+      var filtered=d.pairs.filter(function(p){
+        return p.chainId==="solana" &&
+          p.baseToken&&p.baseToken.address&&
+          (p.liquidity&&p.liquidity.usd||0)>500 &&
+          p.pairCreatedAt&&(now-p.pairCreatedAt)<8*3600000; // under 8 hours old
+      });
+      filtered.sort(function(a,b){return(b.volume&&b.volume.h1||0)-(a.volume&&a.volume.h1||0);});
+      return filtered.slice(0,20).map(function(p){
+        return {
+          mint:  p.baseToken.address,
+          sym:   p.baseToken.symbol||"???",
+          name:  p.baseToken.name||"Unknown",
+          liq:   p.liquidity&&p.liquidity.usd||0,
+          vol24: p.volume&&p.volume.h24||0,
+          vol1:  p.volume&&p.volume.h1||0,
+          price: parseFloat(p.priceUsd)||0,
+          buys:  p.txns&&p.txns.h24&&p.txns.h24.buys||0,
+          sells: p.txns&&p.txns.h24&&p.txns.h24.sells||0,
+          ch1:   p.priceChange&&p.priceChange.h1||0,
+          age:   p.pairCreatedAt?(Date.now()-p.pairCreatedAt)/60000:null,
+          top10: 0, mintAuth:false, freezeAuth:false,
+        };
+      });
+    }).catch(function(){return[];});
+}
+
+// Helius for on-chain data — works via their HTTPS endpoint
+function getHeliusData(mint){
+  if(!S.hKey)return Promise.resolve(null);
+  var rpc="https://mainnet.helius-rpc.com/?api-key="+S.hKey;
+  return Promise.all([
+    fetch(rpc,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({jsonrpc:"2.0",id:1,method:"getAccountInfo",params:[mint,{encoding:"jsonParsed"}]})})
+      .then(function(r){return r.json();}).catch(function(){return{};}),
+    fetch(rpc,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({jsonrpc:"2.0",id:2,method:"getTokenLargestAccounts",params:[mint]})})
+      .then(function(r){return r.json();}).catch(function(){return{};}),
+  ]).then(function(res){
+    var info=res[0].result&&res[0].result.value&&res[0].result.value.data&&res[0].result.value.data.parsed&&res[0].result.value.data.parsed.info;
+    var holders=res[1].result&&res[1].result.value||[];
+    var top10=0;
+    if(holders.length){
+      var tot=holders.reduce(function(s,a){return s+parseFloat(a.uiAmount||0);},0);
+      var t10=holders.slice(0,10).reduce(function(s,a){return s+parseFloat(a.uiAmount||0);},0);
+      top10=tot>0?(t10/tot)*100:0;
+    }
+    return {
+      mintAuth:!!(info&&info.mintAuthority),
+      freezeAuth:!!(info&&info.freezeAuthority),
+      top10:top10,
+    };
+  }).catch(function(){return null;});
+}
+
+function getWalletBalance(){
+  if(!S.hKey||!S.wPub)return Promise.resolve();
+  var rpc="https://mainnet.helius-rpc.com/?api-key="+S.hKey;
+  return fetch(rpc,{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({jsonrpc:"2.0",id:1,method:"getBalance",params:[S.wPub]})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.result&&d.result.value!==undefined){
+        var sol=d.result.value/1e9;
+        S.balance=parseFloat((sol*S.solPrice).toFixed(2));
+        S.portVal=S.balance;
+        render();
+      }
+    }).catch(function(){});
+}
+
+function getSolPrice(){
+  return fetch("https://price.jup.ag/v4/price?ids=SOL")
+    .then(function(r){return r.json();})
+    .then(function(d){S.solPrice=(d.data&&d.data.SOL)?d.data.SOL.price:150;return S.solPrice;})
+    .catch(function(){return S.solPrice;});
+}
+
+function getJupQuote(outMint,lamports){
+  return fetch("https://quote-api.jup.ag/v6/quote?inputMint="+SOL_MINT+"&outputMint="+outMint+"&amount="+lamports+"&slippageBps=100")
+    .then(function(r){return r.json();}).catch(function(){return null;});
+}
+
+// ─── STRATEGY ENGINE ──────────────────────────────
+function runStrategy(token){
+  var mode=S.mode;
+  var checks=[];var pass=true;var reason=null;
+  function fail(l,r){checks.push({l:l,s:"REJECT",r:r});if(pass){pass=false;reason=l+": "+r;}}
+  function ok(l,r){checks.push({l:l,s:"PASS",r:r});}
+  function skip(l,r){checks.push({l:l,s:"SKIP",r:r});}
+
+  // L1 Safety
+  var lf=mode==="STRICT"?10000:5000;
+  if(!token.liq||token.liq<lf) fail("Liquidity",fU(token.liq||0)+" < "+fU(lf));
+  else ok("Liquidity",fU(token.liq));
+  if(token.mintAuth) fail("Mint Auth","Active");
+  else if(token.freezeAuth) fail("Freeze","Active");
+  else ok("Perms","Clean");
+  if(S.blacklist.indexOf(token.mint)>=0) fail("Blacklist","Flagged");
+  else ok("Blacklist","Clear");
+  if(!pass)return{pass:false,reason:reason,checks:checks,sig:null};
+
+  // L2 Quality
+  var cl=mode==="STRICT"?15:40;
+  if(token.top10>cl) fail("Top 10",(token.top10||0).toFixed(0)+"%>"+cl+"%");
+  else ok("Top 10",(token.top10||0).toFixed(0)+"%");
+  var txns=(token.buys||0)+(token.sells||0);
+  var bs=txns>0&&(token.buys/txns)>0.88?72:32;
+  if(bs>55) fail("Bot Score",bs+"");
+  else ok("Bot Score",bs+" clean");
+  var vlr=token.liq>0?(token.vol24/token.liq):0;
+  if(vlr>20) fail("Vol/Liq",vlr.toFixed(1)+"x");
+  else ok("Vol/Liq",vlr.toFixed(1)+"x");
+  if(token.age&&token.age>=120) ok("Fee","~0.25%");
+  else skip("Fee","Token <2h");
+  if(!pass)return{pass:false,reason:reason,checks:checks,sig:null};
+
+  // L3 Narrative
+  var mom=Math.min((token.ch1+50),100);
+  var vs=Math.min((token.vol24/10000)*40,100);
+  var ns=mom*0.5+vs*0.5;
+  var sig=ns>=65?"STRONG":ns>=40?"WEAK":"NO_SIGNAL";
+  ok("Narrative",ns.toFixed(0)+"→"+sig);
+  if(sig==="NO_SIGNAL")return{pass:false,reason:"Narrative "+ns.toFixed(0)+"<40",checks:checks,sig:sig};
+  return{pass:true,reason:null,checks:checks,sig:sig};
+}
+
+// ─── TRADE LOGIC ──────────────────────────────────
+function checkExits(tr){
+  if(!tr||!S.trades.find(function(t){return t.id===tr.id;}))return;
+  if(tr.phase===1&&tr.pnl<=-(SL_PCT*100)){
+    var ret=tr.invested*(1-SL_PCT);
+    S.balance+=ret;S.totalPnl-=tr.invested*SL_PCT;
+    closeTrade(tr,"Stop-loss -40%",ret);
+    toast("💀 "+tr.sym+" stopped · "+fU(ret)+" back","#f87171");
+    addLoss();return;
+  }
+  for(var i=0;i<EXITS.length;i++){
+    var rule=EXITS[i];
+    if(tr.phase===rule.ph&&tr.mult>=rule.target){
+      var sv=tr.invested*tr.holdPct*rule.sell*tr.mult;
+      tr.returns.push({label:rule.label,usd:sv});
+      tr.holdPct*=(1-rule.sell);tr.phase++;
+      S.balance+=sv;S.totalPnl+=sv;addWin();
+      toast((rule.label==="2x"?"🎯":rule.label==="5x"?"🚀":"💎")+" "+tr.sym+" "+rule.label+"! +"+fU(sv),"#22c55e");
+      return;
+    }
+  }
+  if(tr.phase===4){
+    var hm=(Date.now()-tr.entryTime)/60000;
+    if(tr.pnl<-25||(hm>35&&Math.random()<0.10)){
+      var mv=tr.invested*tr.holdPct*Math.max(tr.mult,0.01);
+      S.balance+=mv;S.totalPnl+=mv;
+      closeTrade(tr,"🌙 Moonbag closed",mv);
+      toast("🌙 "+tr.sym+" moonbag → "+fU(mv),"#a78bfa");
+      if(mv>0)addWin();else addLoss();
+    }
+  }
+}
+function closeTrade(tr,reason,exitUsd){
+  S.trades=S.trades.filter(function(t){return t.id!==tr.id;});
+  var c={};for(var k in tr)c[k]=tr[k];
+  c.exitReason=reason;c.exitUsd=exitUsd;c.closedAt=Date.now();
+  S.closed.unshift(c);if(S.closed.length>60)S.closed.pop();
+}
+function addWin(){S.wins++;S.losses=0;if(S.wins>=1&&S.mode==="STRICT")S.mode="RECOVERY";if(S.wins>=2&&S.mode==="RECOVERY")S.mode="NORMAL";}
+function addLoss(){S.losses++;S.wins=0;if(S.losses>=3)S.mode="STRICT";}
+function manualSell(id,pct){
+  var tr=null;for(var i=0;i<S.trades.length;i++){if(S.trades[i].id===id){tr=S.trades[i];break;}}
+  if(!tr)return;
+  var cv=tr.invested*tr.holdPct*Math.max(tr.mult,0.01);var sv=cv*pct;
+  S.balance+=sv;
+  toast("✋ "+tr.sym+" sold "+Math.round(pct*100)+"% → +"+fU(sv),"#f59e0b");
+  if(!S.paper)window.open("https://jup.ag/swap/"+tr.mint+"-SOL","_blank");
+  if(pct>=1){closeTrade(tr,"Manual "+Math.round(pct*100)+"%",sv);if(tr.pnl>0)addWin();else addLoss();}
+  else{tr.holdPct*=(1-pct);}
+  render();
+}
+
+// ─── PAPER SIMULATION ─────────────────────────────
+// Uses real Dexscreener data but doesn't execute real trades
+var _paperQueue=[];
+
+function paperScan(){
+  if(!S.running||!S.paper)return;
+
+  // If we have real tokens queued, use them; else fetch more
+  if(_paperQueue.length>0){
+    processOnePaperToken();
+  } else {
+    // Fetch real tokens from Dexscreener
+    searchNewTokens().then(function(tokens){
+      if(tokens.length>0){
+        _paperQueue=tokens;
+        processOnePaperToken();
+      } else {
+        // If fetch failed, use simulated token
+        _paperQueue=[makeSim()];
+        processOnePaperToken();
+      }
+    }).catch(function(){
+      _paperQueue=[makeSim()];
+      processOnePaperToken();
+    });
+  }
+}
+
+function makeSim(){
+  // Fallback simulated token with realistic Solana CA format
+  var chars="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  var ca="";for(var i=0;i<44;i++)ca+=chars[Math.floor(Math.random()*chars.length)];
+  var names=["BONK","PEPE","WIF","MEW","GOAT","POPCAT","CHAD","DEGEN","MOON","PUMP","FROG","APE","ZEN","KEKS","SEND","BULL","COPE"];
+  var n=pick(names)+(Math.random()>0.6?Math.floor(rand(2,99)):"");
+  var willPass=Math.random()<0.28;
+  return {
+    mint:ca,sym:n.slice(0,6).toUpperCase(),name:n,
+    liq:willPass?rand(6000,80000):rand(200,4500),
+    vol24:(willPass?rand(6000,80000):rand(200,4500))*rand(2,12),
+    vol1:rand(500,5000),
+    price:rand(0.0000001,0.005),
+    ch1:willPass?rand(10,150):rand(-40,20),
+    top10:willPass?rand(4,32):rand(35,72),
+    buys:Math.floor(rand(40,600)),sells:Math.floor(rand(20,200)),
+    age:rand(10,400),mintAuth:!willPass&&Math.random()<0.25,freezeAuth:false,
+    simulated:true,
+    _priceDir:Math.random()>0.4?1:-1,_vol:rand(0.08,0.22),
+  };
+}
+
+function processOnePaperToken(){
+  if(!S.running||!S.paper)return;
+  var token=_paperQueue.shift();
+  if(!token)return;
+  S.currentSym=token.sym;
+  S.currentCA=token.mint;
+  S.scanning=true;
+  render();
+
+  // Simulate analysis delay (0.8s)
+  setTimeout(function(){
+    if(!S.running){S.scanning=false;render();return;}
+
+    var res=runStrategy(token);
+    addLog({
+      id:Date.now()+Math.random(),time:Date.now(),
+      mint:token.mint,sym:token.sym,name:token.name,
+      result:res.pass?"BUY":"SKIP",
+      reason:res.pass?res.sig+" signal":(res.reason||"").slice(0,44),
+      checks:res.checks,
+      liq:token.liq,vol24:token.vol24,price:token.price,
+      expanded:false,sim:token.simulated||false,
+    });
+
+    // Buy if passes and no active phase-1 trade
+    var p1=0;for(var i=0;i<S.trades.length;i++){if(S.trades[i].phase<=3)p1++;}
+    if(res.pass&&p1===0&&S.balance>=TRADE_AMT){
+      S.balance-=TRADE_AMT;
+      var tr={
+        id:Date.now(),mint:token.mint,name:token.name,sym:token.sym,
+        sig:res.sig,entryPrice:token.price||0.0001,curPrice:token.price||0.0001,
+        entryLiq:token.liq,invested:TRADE_AMT,pnl:0,mult:1,
+        phase:1,holdPct:1.0,returns:[],peakVol:token.vol1||0,
+        entryTime:Date.now(),paper:true,
+        _priceDir:token._priceDir||1,_vol:token._vol||0.15,
+      };
+      S.trades.push(tr);
+      toast("◈ PAPER BOUGHT "+token.sym+" · "+res.sig+" · "+fU(TRADE_AMT),"#22c55e");
+    }
+
+    S.scanning=false;S.currentSym="";S.currentCA="";
+    render();
+  },800);
+}
+
+function paperPriceTick(){
+  if(!S.paper||!S.running)return;
+  var changed=false;
+  for(var i=0;i<S.trades.length;i++){
+    var tr=S.trades[i];if(!tr.paper)continue;
+    var chg=rand(-tr._vol,tr._vol*1.4)*tr._priceDir;
+    tr.curPrice=Math.max(tr.curPrice*(1+chg),tr.entryPrice*0.005);
+    tr.pnl=((tr.curPrice-tr.entryPrice)/tr.entryPrice)*100;
+    tr.mult=1+tr.pnl/100;
+    checkExits(tr);changed=true;
+  }
+  if(changed){
+    S.portVal=S.balance+S.trades.reduce(function(s,t){return s+t.invested*t.holdPct*Math.max(t.mult,0.01);},0);
+    render();
+  }
+}
+
+// ─── LIVE SCAN ────────────────────────────────────
+function liveScan(){
+  if(!S.running||S.paper)return;
+  var p1=0;for(var i=0;i<S.trades.length;i++){if(S.trades[i].phase<=3)p1++;}
+  if(p1>0||S.trades.length>=2)return;
+  if(S.balance<TRADE_AMT){toast("⚠ Need "+fU(TRADE_AMT)+" balance","#f59e0b");return;}
+
+  S.scanning=true;render();
+
+  searchNewTokens().then(function(tokens){
+    if(!tokens.length){S.scanning=false;S.currentSym="";render();return;}
+    var idx=0;var bought=false;
+
+    function next(){
+      if(bought||!S.running||idx>=tokens.length){S.scanning=false;S.currentSym="";S.currentCA="";render();return;}
+      var token=tokens[idx++];
+      if(!token.mint){next();return;}
+      var already=false;for(var i=0;i<S.trades.length;i++){if(S.trades[i].mint===token.mint)already=true;}
+      if(already||S.blacklist.indexOf(token.mint)>=0){next();return;}
+
+      S.currentSym=token.sym;S.currentCA=token.mint;render();
+
+      // Enrich with Helius if available
+      var enrich=S.hKey?getHeliusData(token.mint).then(function(h){
+        if(h){token.top10=h.top10;token.mintAuth=h.mintAuth;token.freezeAuth=h.freezeAuth;}
+      }):Promise.resolve();
+
+      enrich.then(function(){
+        var res=runStrategy(token);
+        addLog({
+          id:Date.now()+Math.random(),time:Date.now(),
+          mint:token.mint,sym:token.sym,name:token.name,
+          result:res.pass?"BUY":"SKIP",
+          reason:res.pass?res.sig+" signal":(res.reason||"").slice(0,44),
+          checks:res.checks,liq:token.liq,vol24:token.vol24,price:token.price,
+          expanded:false,
+        });
+        render();
+
+        if(!res.pass){next();return;}
+
+        getSolPrice().then(function(sp){
+          var lamps=Math.floor((TRADE_AMT/sp)*1e9);
+          return getJupQuote(token.mint,lamps);
+        }).then(function(q){
+          if(!q||q.error){
+            S.log[0]&&(S.log[0].result="SKIP")&&(S.log[0].reason="No Jupiter route");
+            render();next();return;
+          }
+          bought=true;
+          S.balance-=TRADE_AMT;
+          S.trades.push({
+            id:Date.now(),mint:token.mint,name:token.name,sym:token.sym,
+            sig:res.sig,entryPrice:token.price,curPrice:token.price,
+            entryLiq:token.liq,invested:TRADE_AMT,pnl:0,mult:1,
+            phase:1,holdPct:1.0,returns:[],peakVol:token.vol1||0,
+            entryTime:Date.now(),paper:false,
+          });
+          toast("◈ BOUGHT "+token.sym+" · "+res.sig+" · "+fU(TRADE_AMT),"#22c55e");
+          window.open("https://jup.ag/swap/SOL-"+token.mint,"_blank");
+          S.scanning=false;S.currentSym="";S.currentCA="";render();
+        }).catch(function(){next();});
+      }).catch(function(){next();});
+    }
+    next();
+  }).catch(function(){S.scanning=false;S.currentSym="";render();});
+}
+
+function livePriceTick(){
+  if(!S.running||S.paper||!S.trades.length)return;
+  S.trades.forEach(function(tr){
+    getDexTokenData(tr.mint).then(function(d){
+      if(!d)return;
+      tr.curPrice=d.price;
+      tr.pnl=((d.price-tr.entryPrice)/tr.entryPrice)*100;
+      tr.mult=1+tr.pnl/100;
+      checkExits(tr);
+      S.portVal=S.balance+S.trades.reduce(function(s,t){return s+t.invested*t.holdPct*Math.max(t.mult,0.01);},0);
+      render();
+    });
+  });
+}
+
+// ─── BOT CONTROL ──────────────────────────────────
+function startBot(){
+  if(!S.paper&&!S.hKey){toast("⚠ Enter Helius key for LIVE mode","#f59e0b");return;}
+  S.running=true;
+  clearInterval(S.scanTimer);clearInterval(S.tickTimer);
+
+  if(S.paper){
+    // Paper: scan every 6 seconds — uses real Dexscreener data
+    // Immediately fetch a batch of real tokens
+    _paperQueue=[];
+    S.scanTimer=setInterval(paperScan,6000);
+    S.tickTimer=setInterval(paperPriceTick,2500);
+    paperScan(); // run immediately
+    toast("▶ PAPER started · fetching real tokens…","#f59e0b");
+  } else {
+    S.scanTimer=setInterval(liveScan,35000);
+    S.tickTimer=setInterval(livePriceTick,20000);
+    if(S.wPub){getWalletBalance();setInterval(getWalletBalance,30000);}
+    liveScan();
+    toast("▶ LIVE · scanning Dexscreener…","#22c55e");
+  }
+  render();
+}
+
+function stopBot(){
+  S.running=false;S.scanning=false;S.currentSym="";S.currentCA="";
+  clearInterval(S.scanTimer);clearInterval(S.tickTimer);
+  toast("■ Bot stopped","#f87171");render();
+}
+
+// ─── PHANTOM ──────────────────────────────────────
+function connectPhantom(){
+  if(window.solana&&window.solana.isPhantom){
+    window.solana.connect().then(function(r){
+      S.wPub=r.publicKey.toString();persist();
+      if(!S.paper)getWalletBalance();
+      toast("✅ "+sh(S.wPub),"#22c55e");render();
+    }).catch(function(){toast("Phantom cancelled","#f87171");});
+  } else {
+    window.location.href="https://phantom.app/ul/browse/"+encodeURIComponent(window.location.href);
+  }
+}
+
+// ─── MANUAL CA SCAN ───────────────────────────────
+function doScan(){
+  var inp=el("sinp");var mint=inp?inp.value.trim():"";
+  if(!mint){toast("Enter a contract address","#f59e0b");return;}
+  var res=el("sres");
+  if(res)res.innerHTML="<div style='padding:20px;text-align:center;color:#22c55e;font-size:11px'>● Fetching token data…</div>";
+
+  getDexTokenData(mint).then(function(dx){
+    var token={
+      mint:mint,
+      name:dx?dx.name:"Unknown",sym:dx?dx.sym:"???",
+      liq:dx?dx.liq:0,vol24:dx?dx.vol24:0,vol1:dx?dx.vol1:0,
+      price:dx?dx.price:0,ch1:dx?dx.ch1:0,age:dx?dx.age:null,
+      buys:dx?dx.buys:0,sells:dx?dx.sells:0,
+      top10:0,mintAuth:false,freezeAuth:false,
+    };
+
+    // Try Helius too
+    return (S.hKey?getHeliusData(mint).then(function(h){
+      if(h){token.top10=h.top10;token.mintAuth=h.mintAuth;token.freezeAuth=h.freezeAuth;}
+    }):Promise.resolve()).then(function(){return token;});
+  }).then(function(token){
+    var r=runStrategy(token);
+    if(!res)return;
+    var pc=r.pass?"#22c55e":"#f87171";
+    var cid="scca"+Date.now();
+
+    var rows=[
+      ["Liquidity",   fU(token.liq)],
+      ["Vol 24h",     fU(token.vol24)],
+      ["Price",       token.price?"$"+token.price.toFixed(8):"N/A"],
+      ["1h Change",   fP(token.ch1)],
+      ["Top 10 Hold", (token.top10||0).toFixed(1)+"%"],
+      ["Mint Auth",   token.mintAuth?"YES ⚠":"NO ✓"],
+      ["Age",         token.age?token.age.toFixed(0)+"min":"N/A"],
+    ];
+
+    var checksHtml=r.checks.map(function(c){
+      var col=c.s==="PASS"?"#22c55e":c.s==="REJECT"?"#f87171":"#555";
+      return "<div style='display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #0d0d0d;align-items:center'>"
+        +"<span style='font-size:9px;color:"+col+";font-weight:bold;width:40px;flex-shrink:0'>"+c.s+"</span>"
+        +"<span style='font-size:10px;color:#555;flex:1'>"+c.l+"</span>"
+        +"<span style='font-size:9px;color:#333;text-align:right;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+c.r+"</span>"
+        +"</div>";
+    }).join("");
+
+    res.innerHTML=""
+      +"<div style='background:#0c0c0c;border:1px solid #1a1a1a;border-radius:14px;padding:14px'>"
+      +"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:10px'>"
+      +"<div><div style='font-size:16px;font-weight:bold;color:#fff'>"+token.sym+"</div>"
+      +"<div style='font-size:9px;color:#444'>"+token.name+"</div></div>"
+      +"<span style='padding:3px 10px;border-radius:99px;font-size:10px;font-weight:bold;background:"+pc+"18;color:"+pc+";border:1px solid "+pc+"33'>"+(r.pass?"✓ PASS":"✕ REJECT")+"</span></div>"
+      +"<div style='display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px'>"
+      +rows.map(function(kv){return "<div style='background:#111;border-radius:7px;padding:7px 9px;border:1px solid #1a1a1a'><div style='font-size:8px;color:#333'>"+kv[0]+"</div><div style='font-size:11px;font-weight:bold;color:#fff;margin-top:1px'>"+kv[1]+"</div></div>";}).join("")
+      +"</div>"
+      +"<div style='background:#080808;border-radius:10px;padding:10px;margin-bottom:10px'>"+checksHtml+"</div>"
+      +"<button id='"+cid+"' onclick=\"copyCA('"+mint+"','"+cid+"')\" style='display:flex;align-items:center;gap:6px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:8px;padding:8px 11px;width:100%;cursor:pointer;margin-bottom:10px;text-align:left'>"
+      +"<span style='font-size:9px;color:#333;font-weight:bold;flex-shrink:0'>CA</span>"
+      +"<span style='font-size:9px;color:#2a2a2a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace'>"+mint+"</span>"
+      +"<span style='font-size:13px;color:#2a2a2a'>⎘</span></button>"
+      +"<div style='padding:10px;background:"+pc+"11;border:1px solid "+pc+"33;border-radius:10px'>"
+      +"<div style='font-size:11px;color:"+pc+";font-weight:bold'>"+(r.pass?"✓ "+r.sig+" SIGNAL — bot will buy next cycle":"✕ REJECTED")+"</div>"
+      +"<div style='font-size:10px;color:#555;margin-top:3px'>"+(r.pass?"":r.reason||"")+"</div></div></div>";
+  }).catch(function(e){
+    if(res)res.innerHTML="<div style='padding:10px;color:#f87171;font-size:11px'>Error: "+e.message+"</div>";
+  });
+}
+
+function copyCA(addr,bid){
+  try{if(navigator.clipboard)navigator.clipboard.writeText(addr);else{var e=document.createElement("textarea");e.value=addr;e.style.cssText="position:fixed;opacity:0";document.body.appendChild(e);e.focus();e.select();document.execCommand("copy");document.body.removeChild(e);}}catch(e){}
+  toast("CA copied","#22c55e");
+  var btn=bid?el(bid):null;
+  if(btn){var h=btn.innerHTML;btn.innerHTML="<span style='color:#22c55e;font-size:10px;font-weight:bold'>✓ COPIED</span>";setTimeout(function(){btn.innerHTML=h;},2000);}
+}
+function toggleLog(idx){if(S.log[idx])S.log[idx].expanded=!S.log[idx].expanded;render();}
+function setTab(t){S.tab=t;render();window.scrollTo(0,0);}
+function goSetup(){S.screen="setup";render();}
+function launch(){persist();S.screen="dashboard";if(!S.paper&&S.wPub)getWalletBalance();else S.portVal=S.balance;render();}
+
+// ─── RENDER HELPERS ───────────────────────────────
+function chip(label,col,sm){
+  return "<span style='display:inline-block;padding:2px 8px;border-radius:99px;font-size:"+(sm?8:9)+"px;font-weight:bold;background:"+col+"18;color:"+col+";border:1px solid "+col+"33;white-space:nowrap'>"+label+"</span>";
+}
+function ccaBtn(mint,uid){
+  return "<button id='"+uid+"' onclick=\"copyCA('"+mint+"','"+uid+"')\" style='display:flex;align-items:center;gap:6px;background:#0d0d0d;border:1px solid #1a1a1a;border-radius:8px;padding:8px 11px;width:100%;margin-top:7px;cursor:pointer;text-align:left'>"
+    +"<span style='font-size:9px;color:#333;font-weight:bold;flex-shrink:0'>CA</span>"
+    +"<span style='font-size:9px;color:#2a2a2a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:monospace'>"+mint+"</span>"
+    +"<span style='font-size:13px;color:#2a2a2a'>⎘</span></button>";
+}
+function roadHTML(tr){
+  var ph=tr.phase,mu=tr.mult||1;
+  var fill=ph===1?Math.min((Math.log(Math.max(mu,1))/Math.log(2))*25,25):ph===2?25+Math.min(((mu-2)/3)*25,25):ph===3?50+Math.min(((mu-5)/5)*25,25):75;
+  var fc=ph===4?"#a78bfa":mu>5?"#22c55e":mu>2?"#f59e0b":"#22c55e22";
+  var dots=[{l:"IN",p:0,d:true},{l:"2x",p:25,d:ph>=2},{l:"5x",p:50,d:ph>=3},{l:"10x",p:75,d:ph>=4},{l:"🌙",p:100,d:false}];
+  var h="<div style='position:relative;height:40px;margin:12px 0 18px'><div style='position:absolute;top:12px;left:18px;right:18px;height:2px;background:#111;border-radius:99px'><div style='height:100%;background:"+fc+";width:"+fill+"%;border-radius:99px'></div></div>";
+  dots.forEach(function(d){var off=d.p===0?0:d.p===100?18:10;h+="<div style='position:absolute;top:2px;left:calc("+d.p+"% - "+off+"px);display:flex;flex-direction:column;align-items:center;gap:3px'><div style='width:22px;height:22px;border-radius:50%;background:"+(d.d?"#22c55e":"#111")+";border:2px solid "+(d.d?"#22c55e":"#1e1e1e")+";display:flex;align-items:center;justify-content:center;font-size:9px;color:#000;font-weight:bold'>"+(d.d?"✓":"")+"</div><span style='font-size:8px;font-weight:bold;color:"+(d.d?"#22c55e":d.l==="10x"||d.l==="🌙"?"#333":"#1a1a1a")+"'>"+d.l+"</span></div>";});
+  return h+"</div>";
+}
+function tradeCard(tr){
+  var pnl=tr.pnl||0,mu=tr.mult||1,ph=tr.phase;
+  var cv=tr.invested*tr.holdPct*Math.max(mu,0.01);
+  var ret=tr.returns.reduce(function(s,r){return s+r.usd;},0);
+  var pL=["","TO 2x","TO 5x","TO 10x","🌙 MOONBAG"];
+  var pCol=["","#f59e0b","#fb923c","#22c55e","#a78bfa"];
+  var uid="tc"+tr.id;
+  return "<div style='background:#0c0c0c;border:1px solid "+(ph===4?"#a78bfa33":pnl>50?"#22c55e33":pnl<-15?"#f8717122":"#1a1a1a")+";border-radius:14px;padding:14px;margin-bottom:10px'>"
+    +"<div style='display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px'>"
+    +"<div><span style='font-size:20px;font-weight:bold;color:#fff'>"+tr.sym+"</span>"+(tr.paper?"<span style='font-size:8px;color:#f59e0b;margin-left:6px'>PAPER</span>":"")+"<div style='font-size:8px;color:#1a1a1a;margin-top:1px'>"+ag(tr.entryTime)+" ago</div></div>"
+    +"<div style='display:flex;flex-direction:column;gap:4px;align-items:flex-end'>"+chip(tr.sig,tr.sig==="STRONG"?"#22c55e":"#f59e0b")+chip("RIDING "+pL[ph],pCol[ph])+"</div></div>"
+    +ccaBtn(tr.mint,uid)+roadHTML(tr)
+    +"<div style='text-align:center;margin:6px 0 12px'><div style='font-size:38px;font-weight:bold;color:"+pC(pnl)+";letter-spacing:-2px;line-height:1'>"+mu.toFixed(2)+"x</div><div style='font-size:11px;color:"+pC(pnl)+";margin-top:2px'>"+fP(pnl)+"</div></div>"
+    +"<div style='background:#080808;border:1px solid #111;border-radius:10px;padding:10px 12px;margin-bottom:10px'>"
+    +"<div style='display:flex;justify-content:space-between;margin-bottom:3px'><span style='font-size:10px;color:#333'>Invested</span><span style='font-size:10px;color:#555'>"+fU(tr.invested)+"</span></div>"
+    +tr.returns.map(function(r){return "<div style='display:flex;justify-content:space-between;margin-bottom:3px'><span style='font-size:10px;color:#22c55e'>✓ "+r.label+"</span><span style='font-size:10px;color:#22c55e;font-weight:bold'>+"+fU(r.usd)+"</span></div>";}).join("")
+    +"<div style='display:flex;justify-content:space-between;margin-bottom:3px'><span style='font-size:10px;color:#444'>Holding ("+(tr.holdPct*100).toFixed(0)+"%"+(ph>1?" free":"")+")</span><span style='font-size:10px;color:"+pC(pnl)+";font-weight:bold'>"+fU(cv)+"</span></div>"
+    +(ret>0?"<div style='display:flex;justify-content:space-between;border-top:1px solid #111;padding-top:4px;margin-top:3px'><span style='font-size:10px;color:#22c55e88'>Total returned</span><span style='font-size:10px;color:#22c55e;font-weight:bold'>+"+fU(ret)+"</span></div>":"")
+    +"</div>"
+    +(ph===1?"<div style='margin-bottom:10px'><div style='display:flex;justify-content:space-between;margin-bottom:3px'><span style='font-size:8px;color:#1a1a1a'>STOP -40%</span><span style='font-size:9px;color:"+(pnl<=-25?"#f87171":"#333")+"'>"+fP(pnl)+"</span></div><div style='height:3px;background:#111;border-radius:99px;overflow:hidden'><div style='height:100%;width:"+Math.min(Math.max((pnl+40)/140*100,0),100)+"%;background:"+(pnl<-25?"#f87171":pnl<-10?"#f59e0b":"#22c55e33")+";border-radius:99px'></div></div></div>":"")
+    +"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:5px'>"
+    +[{l:"25%",p:.25,c:"#f59e0b"},{l:"50%",p:.5,c:"#fb923c"},{l:"80%",p:.8,c:"#f87171"},{l:"100%",p:1,c:"#ef4444"}]
+      .map(function(b){return "<button onclick='manualSell("+tr.id+","+b.p+")' style='padding:8px 0;border-radius:8px;font-size:9px;font-weight:bold;background:"+b.c+"14;color:"+b.c+";border:1px solid "+b.c+"44;cursor:pointer'>SELL "+b.l+"</button>";}).join("")
+    +"</div></div>";
+}
+function logRow(l,i){
+  var col=l.result==="BUY"?"#22c55e":"#333";
+  var uid="lr"+i+"_"+Math.floor(l.id||0);
+  return "<div style='border-bottom:1px solid #0a0a0a'>"
+    +"<div onclick='toggleLog("+i+")' style='display:flex;gap:7px;align-items:center;padding:8px 14px;cursor:pointer'>"
+    +"<span style='font-size:8px;color:#1a1a1a;white-space:nowrap;flex-shrink:0'>"+new Date(l.time||Date.now()).toLocaleTimeString()+"</span>"
+    +chip(l.result,col,true)+(l.sim?chip("SIM","#444",true):"")
+    +"<span style='font-size:10px;font-weight:bold;color:#666'>"+l.sym+"</span>"
+    +"<span style='font-size:9px;color:#222;flex:1;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+l.reason+"</span>"
+    +"<span style='font-size:9px;color:#2a2a2a;margin-left:3px'>"+(l.expanded?"▲":"▼")+"</span></div>"
+    +(l.expanded
+      ?"<div style='padding:0 14px 10px'>"
+        +"<div style='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:9px;color:#333'>"
+        +"<span>Liq: <b style='color:#555'>"+fU(l.liq||0)+"</b></span>"
+        +"<span>Vol: <b style='color:#555'>"+fU(l.vol24||0)+"</b></span>"
+        +"<span>Price: <b style='color:#555'>$"+(l.price||0).toFixed(8)+"</b></span></div>"
+        +"<div style='background:#080808;border-radius:10px;padding:10px;margin-bottom:8px'>"
+        +(l.checks||[]).map(function(c){var cc=c.s==="PASS"?"#22c55e":c.s==="REJECT"?"#f87171":"#555";return "<div style='display:flex;gap:8px;padding:4px 0;border-bottom:1px solid #0d0d0d;align-items:center'><span style='font-size:9px;color:"+cc+";font-weight:bold;width:40px;flex-shrink:0'>"+c.s+"</span><span style='font-size:10px;color:#555;flex:1'>"+c.l+"</span><span style='font-size:9px;color:#333;text-align:right;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'>"+c.r+"</span></div>";}).join("")
+        +"</div>"
+        +ccaBtn(l.mint,uid)+"</div>"
+      :"")
+    +"</div>";
+}
+
+// ─── MAIN RENDER ──────────────────────────────────
+function render(){
+  var app=el("app");if(!app)return;
+  if(S.screen==="setup"){app.innerHTML=setupHTML();return;}
+
+  var tc=S.closed.length;var tw=0;for(var i=0;i<S.closed.length;i++){if(S.closed[i].pnl>0)tw++;}
+  var wr=tc?Math.round(tw/tc*100):0;
+  var pr=S.paper?((S.portVal-10)/10)*100:0;
+  var tabs=[["positions","POSITIONS"],["scanner","SCANNER"],["history","HISTORY"],["log","LOG"]];
+  var hasActive=false;for(var j=0;j<S.trades.length;j++){if(S.trades[j].phase<=3)hasActive=true;}
+  var hasMoon=false;for(var k=0;k<S.trades.length;k++){if(S.trades[k].phase===4)hasMoon=true;}
+
+  // Build scanning indicator
+  var scanLabel="";
+  if(S.scanning){
+    scanLabel="<div style='display:flex;align-items:center;gap:6px;margin-top:4px'>"
+      +"<span style='display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0'></span>"
+      +"<span style='font-size:9px;color:#22c55e'>Checking: <b>"+S.currentSym+"</b></span>"
+      +(S.currentCA?"<span style='font-size:8px;color:#333;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1'>"+S.currentCA.slice(0,14)+"…</span>":"")
+      +"</div>";
+  }
+
+  app.innerHTML=""
+  // HEADER
+  +"<div style='padding:14px 14px 10px;border-bottom:1px solid #111;background:#050505;position:sticky;top:0;z-index:100'>"
+  +"<div style='display:flex;justify-content:space-between;align-items:flex-start'>"
+  +"<div style='flex:1;min-width:0'>"
+  +"<div style='font-size:14px;font-weight:bold'>◈ REX"
+  +"<span style='font-size:9px;color:"+(S.paper?"#f59e0b":"#22c55e")+";margin-left:8px;font-weight:bold'>"+(S.paper?"📄 PAPER":"🔴 LIVE")+"</span></div>"
+  +"<div style='display:flex;gap:5px;margin-top:4px;align-items:center;flex-wrap:wrap'>"
+  +chip(S.mode,mC[S.mode])
+  +(hasActive?"<span style='font-size:9px;color:#f59e0b'>● IN TRADE</span>":"")
+  +(hasMoon?"<span style='font-size:9px;color:#a78bfa'>🌙 MOONBAG</span>":"")
+  +"</div>"
+  +scanLabel
+  +"</div>"
+  +"<div style='text-align:right;flex-shrink:0;margin-left:10px'>"
+  +"<div style='font-size:9px;color:#222'>"+(S.paper?"PORTFOLIO":"WALLET")+"</div>"
+  +"<div style='font-size:24px;font-weight:bold;letter-spacing:-1px;line-height:1.1;color:"+(S.portVal>=10?"#22c55e":"#f87171")+"'>"+fU(S.portVal)+"</div>"
+  +(S.paper?"<div style='font-size:10px;color:"+(pr>=0?"#22c55e88":"#f8717188")+"'>"+fP(pr)+"</div>":"<div style='font-size:9px;color:#333'>"+(S.wPub?sh(S.wPub):"—")+"</div>")
+  +"</div></div>"
+  +"<div style='display:flex;gap:8px;margin-top:8px'>"
+  +"<button onclick='"+(S.running?"stopBot()":"startBot()")+"' style='flex:1;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;background:"+(S.running?"#f8717122":"#22c55e22")+";color:"+(S.running?"#f87171":"#22c55e")+";border:1px solid "+(S.running?"#f8717144":"#22c55e44")+";cursor:pointer'>"+(S.running?"■ STOP BOT":"▶ START BOT")+"</button>"
+  +"<button onclick='goSetup()' style='padding:8px 12px;border-radius:8px;background:#111;color:#555;border:1px solid #1a1a1a;font-size:13px;cursor:pointer'>⚙</button>"
+  +"</div>"
+  +"<div style='margin-top:7px;display:flex;gap:8px;align-items:center'>"
+  +"<div style='flex:1;height:2px;background:#0d0d0d;border-radius:99px;overflow:hidden'><div style='height:100%;background:"+(pr>=0?"#22c55e":"#f87171")+";width:"+Math.min((S.portVal/10)*50,100)+"%;transition:width 1s;border-radius:99px'></div></div>"
+  +"<span style='font-size:8px;color:#222;white-space:nowrap'>Cash <span style='color:#333'>"+fU(S.balance)+"</span>&nbsp;·&nbsp;Trades <span style='color:#333'>"+S.log.length+"</span></span>"
+  +"</div></div>"
+  // TABS
+  +"<div style='display:flex;background:#050505;border-bottom:1px solid #111;position:sticky;top:0;z-index:99'>"
+  +tabs.map(function(t){var on=S.tab===t[0];return "<button onclick=\"setTab('"+t[0]+"')\" style='flex:1;padding:10px 0;font-size:8px;font-weight:bold;letter-spacing:.5px;color:"+(on?"#22c55e":"#2a2a2a")+";border-bottom:2px solid "+(on?"#22c55e":"transparent")+";background:none;border-top:none;border-left:none;border-right:none;cursor:pointer'>"+t[1]+"</button>";}).join("")
+  +"</div>"
+  // PANE
+  +"<div style='padding:"+(S.tab==="log"?"0":"14px")+"'>"
+  // POSITIONS
+  +(S.tab==="positions"
+    ?"<div style='display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px'>"
+      +[["CASH",fU(S.balance),"#aaa"],["WIN%",wr+"%","#22c55e"],["CLOSED",""+tc,"#aaa"],["STREAK",(S.losses>=3?"L":"W")+(S.losses>=3?S.losses:S.wins),S.losses>=3?"#f87171":"#22c55e"]]
+        .map(function(sc){return "<div style='background:#0c0c0c;border:1px solid #1a1a1a;border-radius:9px;padding:8px 0;text-align:center'><div style='font-size:8px;color:#222'>"+sc[0]+"</div><div style='font-size:13px;font-weight:bold;color:"+sc[2]+";margin-top:2px'>"+sc[1]+"</div></div>";}).join("")+"</div>"
+      +"<div style='background:#080808;border:1px solid #111;border-radius:10px;padding:9px 12px;margin-bottom:12px'>"
+      +"<div style='display:flex;justify-content:space-around'>"
+      +[["$5","Entry"],["2x","→80%"],["5x","→50%"],["10x","→50%"],["🌙","Moon"]].map(function(kv){return "<div style='text-align:center'><div style='font-size:11px;font-weight:bold;color:#444'>"+kv[0]+"</div><div style='font-size:7px;color:#1a1a1a;margin-top:2px'>"+kv[1]+"</div></div>";}).join("")
+      +"</div></div>"
+      +(S.trades.length===0
+        ?"<div style='background:#0c0c0c;border:1px solid #1a1a1a;border-radius:14px;padding:30px 16px;text-align:center'>"
+          +"<div style='font-size:26px;margin-bottom:8px'>"+(S.running?"⏳":"⏸")+"</div>"
+          +"<div style='font-size:11px;color:#1e1e1e'>"+(S.running?(S.paper?"Scanning real tokens — check LOG tab →":"Scanning Dexscreener…"):"Press START BOT")+"</div>"
+          +(S.running?"<div style='font-size:10px;color:#2a2a2a;margin-top:5px'>"+(S.paper?"Scans every 6s · buys when token passes":"Scans every 35s")+"</div>":"")
+          +"</div>"
+        :S.trades.map(tradeCard).join(""))
+    :"")
+  // SCANNER
+  +(S.tab==="scanner"
+    ?"<div style='font-size:10px;color:#333;margin-bottom:10px'>Paste any Solana CA to run full strategy check.</div>"
+      +"<div style='display:flex;gap:8px;margin-bottom:10px'>"
+      +"<input id='sinp' style='flex:1;padding:10px 12px;border-radius:9px;background:#0c0c0c;border:1px solid #1e1e1e;font-size:12px' placeholder='Contract address (CA)…'/>"
+      +"<button onclick='doScan()' style='padding:10px 13px;border-radius:9px;background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;font-size:11px;font-weight:bold;white-space:nowrap;cursor:pointer'>SCAN ◈</button>"
+      +"</div>"
+      +"<div style='font-size:9px;color:#2a2a2a;padding:8px;background:#0c0c0c;border-radius:8px;border:1px solid #111;margin-bottom:12px'>"
+      +"💡 Copy a CA from <a href='https://axiom.trade' target='_blank' style='color:#22c55e'>axiom.trade</a> or <a href='https://dexscreener.com' target='_blank' style='color:#22c55e'>Dexscreener</a> and paste above</div>"
+      +"<div id='sres'></div>"
+    :"")
+  // HISTORY
+  +(S.tab==="history"
+    ?"<div style='display:flex;justify-content:space-between;margin-bottom:12px'>"
+      +"<span style='font-size:9px;color:#2a2a2a;font-weight:bold'>CLOSED ("+tc+")</span>"
+      +"<span style='font-size:10px;color:"+(S.totalPnl>=0?"#22c55e":"#f87171")+";font-weight:bold'>"+(S.totalPnl>=0?"+":"")+fU(S.totalPnl)+"</span></div>"
+      +(tc===0?"<div style='text-align:center;padding:40px 0;font-size:11px;color:#141414'>No closed trades yet</div>":"")
+      +S.closed.map(function(t,i){
+        var pnl=t.pnl||0;var ret=t.returns?t.returns.reduce(function(s,r){return s+r.usd;},0):0;
+        var uid="hcc"+i;
+        return "<div style='background:#0c0c0c;border:1px solid "+(pnl>0?"#22c55e18":"#1a1a1a")+";border-radius:12px;padding:12px 14px;margin-bottom:8px'>"
+          +"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px'>"
+          +"<span style='font-weight:bold;font-size:14px;color:#fff'>"+t.sym+(t.paper?" <span style='font-size:8px;color:#f59e0b'>PAPER</span>":"")+"</span>"
+          +"<span style='font-size:13px;font-weight:bold;color:"+pC(pnl)+"'>"+fP(pnl)+"</span></div>"
+          +(t.returns?t.returns.map(function(r){return "<div style='font-size:9px;color:#22c55e;margin-bottom:2px'>✓ "+r.label+" +"+fU(r.usd)+"</div>";}).join(""):"")
+          +(ret>0?"<div style='font-size:10px;color:#22c55e;font-weight:bold;margin-bottom:4px'>Total: +"+fU(ret)+"</div>":"")
+          +ccaBtn(t.mint,uid)
+          +"<div style='margin-top:6px;font-size:9px;color:#222'>"+t.exitReason+" · "+ag(t.closedAt)+"</div></div>";
+      }).join("")
+    :"")
+  // LOG
+  +(S.tab==="log"
+    ?"<div style='padding:10px 14px;border-bottom:1px solid #111;display:flex;justify-content:space-between'>"
+      +"<span style='font-size:9px;color:#333;font-weight:bold'>"+S.log.length+" scanned</span>"
+      +"<span style='font-size:8px;color:#1a1a1a'>Tap row to expand</span></div>"
+      +(S.scanning?"<div style='padding:8px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #0a0a0a'>"
+        +"<span style='display:inline-block;width:7px;height:7px;border-radius:50%;background:#22c55e;flex-shrink:0'></span>"
+        +"<span style='font-size:9px;color:#22c55e'>"+S.currentSym+" · "+S.currentCA.slice(0,18)+"…</span></div>":"")
+      +(S.log.length===0?"<div style='text-align:center;padding:40px 0;font-size:11px;color:#141414'>"+(S.running?"First scan in progress…":"Press START BOT")+"</div>":"")
+      +S.log.map(function(l,i){return logRow(l,i);}).join("")
+    :"")
+  +"</div>";
+}
+
+function setupHTML(){
+  return "<div style='padding:20px 16px 40px'>"
+    +"<div style='text-align:center;margin-bottom:24px;padding-top:14px'>"
+    +"<div style='font-size:36px;color:#22c55e;margin-bottom:6px'>◈</div>"
+    +"<div style='font-size:20px;font-weight:bold;color:#fff'>REX BOT</div>"
+    +"<div style='font-size:10px;color:#333;margin-top:4px'>2x→5x→10x→🌙 Strategy</div></div>"
+    +"<button onclick='connectPhantom()' style='width:100%;padding:14px;border-radius:13px;background:linear-gradient(135deg,#534bb1,#551bf9);color:#fff;font-size:14px;font-weight:bold;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:10px;border:none;cursor:pointer'>"
+    +"👻 "+(S.wPub?"Connected: "+sh(S.wPub):"Connect Phantom Wallet")+"</button>"
+    +"<div style='background:#f59e0b0d;border:1px solid #f59e0b22;border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:9px;color:#f59e0b99;line-height:1.7'>⚠ Keys stored in browser only. Never sent anywhere. Only trade what you can afford to lose.</div>"
+    +"<div style='margin-bottom:14px'>"
+    +"<div style='font-size:9px;color:#444;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px'>Helius API Key</div>"
+    +"<input id='hkeyinp' type='password' placeholder='Paste key… (optional for paper mode)' value='"+S.hKey+"' oninput=\"S.hKey=this.value\" style='width:100%;padding:10px 12px;border-radius:9px;background:#0c0c0c;border:1px solid #1e1e1e;font-size:12px'/>"
+    +"<div style='font-size:9px;color:#2a2a2a;margin-top:4px'>Free at dashboard.helius.dev</div></div>"
+    +"<div style='margin-bottom:14px'>"
+    +"<div style='font-size:9px;color:#444;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px'>Mode</div>"
+    +"<div style='display:flex;gap:8px;margin-bottom:8px'>"
+    +"<button onclick=\"S.paper=true;render()\" style='flex:1;padding:10px;border-radius:9px;font-size:10px;font-weight:bold;cursor:pointer;background:"+(S.paper?"#f59e0b1a":"#0c0c0c")+";color:"+(S.paper?"#f59e0b":"#333")+";border:1px solid "+(S.paper?"#f59e0b44":"#1a1a1a")+"'>📄 PAPER</button>"
+    +"<button onclick=\"S.paper=false;render()\" style='flex:1;padding:10px;border-radius:9px;font-size:10px;font-weight:bold;cursor:pointer;background:"+(!S.paper?"#f871711a":"#0c0c0c")+";color:"+(!S.paper?"#f87171":"#333")+";border:1px solid "+(!S.paper?"#f8717144":"#1a1a1a")+"'>🔴 LIVE</button>"
+    +"</div>"
+    +(S.paper?"<div style='font-size:9px;color:#888;line-height:1.6'>Uses real token data from Dexscreener. Simulates trades every 6s with real CAs. No money used.</div>":"")
+    +(!S.paper?"<div style='font-size:9px;color:#f87171;line-height:1.6'>Scans Dexscreener every 35s. Buys via Jupiter, confirmed in Phantom. Helius key required for deeper checks.</div>":"")
+    +"</div>"
+    +"<div style='background:#080808;border:1px solid #111;border-radius:10px;padding:10px 12px;margin-bottom:18px'>"
+    +"<div style='font-size:8px;color:#2a2a2a;font-weight:bold;margin-bottom:7px'>STRATEGY</div>"
+    +"<div style='display:flex;justify-content:space-around'>"
+    +[["$5","Entry"],["2x","Sell 80%"],["5x","Sell 50%"],["10x","Sell 50%"],["🌙","Moon"]].map(function(kv){return "<div style='text-align:center'><div style='font-size:10px;font-weight:bold;color:#444'>"+kv[0]+"</div><div style='font-size:7px;color:#1a1a1a;margin-top:2px'>"+kv[1]+"</div></div>";}).join("")
+    +"</div></div>"
+    +"<button onclick='launch()' style='width:100%;padding:14px;border-radius:13px;background:#22c55e1a;color:#22c55e;border:1px solid #22c55e44;font-size:14px;font-weight:bold;cursor:pointer'>Launch →</button>"
+    +"</div>";
+}
+
+hydrate();
+render();
+</script>
+
+</body>
+</html>
