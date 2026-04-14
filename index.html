@@ -917,8 +917,26 @@ return “<div style='padding:20px 16px 40px'>”
 +”</div>”;
 }
 
+// Catch any uncaught errors and show them on screen
+window.onerror = function(msg, src, line, col, err) {
+var app = document.getElementById(“app”);
+if(app) app.innerHTML = “<div style='padding:20px;color:#f87171;font-family:monospace'>”
++”<div style='font-size:14px;margin-bottom:10px'>⚠ JS Error</div>”
++”<div style='background:#111;padding:10px;border-radius:8px;font-size:10px;word-break:break-all;line-height:1.6'>”
++”<b>”+msg+”</b><br>Line: “+line+”<br>”+src+”</div>”
++”<div style='margin-top:10px;font-size:10px;color:#555'>Please screenshot this and share</div></div>”;
+return false;
+};
+
+try {
 load();
 render();
+} catch(e) {
+var app = document.getElementById(“app”);
+if(app) app.innerHTML = “<div style='padding:20px;color:#f87171;font-family:monospace'>”
++”<div style='font-size:14px;margin-bottom:10px'>⚠ Startup Error</div>”
++”<div style='background:#111;padding:10px;border-radius:8px;font-size:10px;word-break:break-all'>”+e.message+”</div></div>”;
+}
 </script>
 
 </body>
